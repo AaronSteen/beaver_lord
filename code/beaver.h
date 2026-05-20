@@ -80,8 +80,8 @@ struct world_position
 
     // TODO(casey): Should these be from the center of a tile?
     // TODO(casey): Rename to offset X and Y
-    real32 TileRelX;
-    real32 TileRelY;
+    real32 TileOffsetX;
+    real32 TileOffsetY;
 };
 
 struct tile_chunk
@@ -107,10 +107,15 @@ struct tile_map
     u32 ChunksInMapY;
     u32 ChunksInMapX;
 
-    u32 TilesInWorldY;
-    u32 TilesInWorldX;
-
     tile_chunk *TileChunksArray;
+};
+
+struct room_coordinates
+{
+    u32 RoomY;
+    u32 RoomX;
+    u32 TileInRoomY;
+    u32 TileInRoomX;
 };
 
 struct world

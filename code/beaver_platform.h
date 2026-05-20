@@ -25,6 +25,8 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+typedef size_t memory_index;
+
 typedef float real32;
 typedef double real64;
 
@@ -139,10 +141,10 @@ typedef struct game_memory
 {
     bool32 IsInitialized;
 
-    u64 PermanentStorageSize;
+    memory_index PermanentStorageSize;
     void *PermanentStorage; // NOTE(casey): REQUIRED to be cleared to zero at startup
 
-    u64 TransientStorageSize;
+    memory_index TransientStorageSize;
     void *TransientStorage; // NOTE(casey): REQUIRED to be cleared to zero at startup
 
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;

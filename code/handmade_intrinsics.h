@@ -15,23 +15,30 @@
 #include "math.h"
 
 inline s32
-RoundReal32ToInt32(real32 Real32)
+RoundReal32ToS32(real32 Real32)
 {
-    s32 Result = (s32)(Real32 + 0.5f);
+    s32 Result = (s32)roundf(Real32);
     return(Result);
 }
 
 inline u32
-RoundReal32ToUInt32(real32 Real32)
+RoundReal32ToU32(real32 Real32)
 {
-    u32 Result = (u32)(Real32 + 0.5f);
+    u32 Result = (u32)roundf(Real32);
     return(Result);
 }
 
 inline s32 
-FloorReal32ToInt32(real32 Real32)
+FloorReal32ToS32(real32 Real32)
 {
     s32 Result = (s32)floorf(Real32);
+    return(Result);
+}
+
+inline u32
+FloorReal32ToU32(real32 Real32)
+{
+    u32 Result = (u32)floorf(Real32);
     return(Result);
 }
 
