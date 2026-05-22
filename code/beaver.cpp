@@ -461,13 +461,56 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         u32 CenterRoomYCoord = 10;
         u32 CenterRoomXCoord = 10;
         MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, CenterRoomYCoord, CenterRoomXCoord, true, true, true, true);
-        for(int RoomIdx = 1;
-            RoomIdx < 11;
-            ++RoomIdx)
+        enum door
         {
-            MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, (CenterRoomYCoord + RoomIdx), CenterRoomXCoord, true, true, true, true);
-        }
+            DOOR_EAST = 1,
+            DOOR_NORTH = 2,
+            DOOR_WEST = 3,
+            DOOR_SOUTH = 4
+        };
+        for(int DoorInStartingRoom = DOOR_EAST;
+            DoorInStartingRoom <= DOOR_SOUTH;
+            ++DoorInStartingRoom)
+        {
+            u32 RoomY = CenterRoomYCoord;
+            u32 RoomX = CenterRoomXCoord;
+            if(DoorInStartingRoom == DOOR_EAST)
+            {
+                RoomX += 1;
+            }
+            if(DoorInStartingRoom == DOOR_NORTH)
+            {
+                RoomY += 1;
+            }
+            if(DoorInStartingRoom == DOOR_WEST)
+            {
+                RoomX -= 1;
+            }
+            if(DoorInStartingRoom == DOOR_SOUTH)
+            {
+                RoomY -= 1;
+            }
 
+            u32 NumberOfDoorsToMake = GetRandomNumber(&GameState->RandomSeed, 1, 4);
+            bool32 DrawDoorOnThisWall[5] = {0};
+            for(int NthDoorToMake = 1;
+                NthDoorToMake <= NumberOfDoorsToMake;
+                ++NthDoorToMake)
+            {
+                u32 WhichDoor;
+                do
+                {
+                    WhichDoor = GetRandomNumber(&GameState->RandomSeed, 1, 4);
+                } while(DrawDoorOnThisWall[WhichDoor] == true);
+                DrawDoorOnThisWall[WhichDoor] = true;
+            }
+            MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 
+                           RoomY, RoomX, 
+                           DrawDoorOnThisWall[DOOR_EAST], 
+                           DrawDoorOnThisWall[DOOR_NORTH], 
+                           DrawDoorOnThisWall[DOOR_WEST], 
+                           DrawDoorOnThisWall[DOOR_SOUTH]); 
+        }
         GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomYCoord, 4, TileMapPointer->TilesPerRoomY);
         GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffsetY = 0.6f;
