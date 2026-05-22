@@ -13,6 +13,7 @@ extern "C" {
     
 #include <stdint.h>
 #include <math.h>
+#include <time.h>
 
 typedef int8_t s8;
 typedef int16_t s16;
@@ -150,6 +151,8 @@ typedef struct game_memory
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
     debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
     debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
+
+    u32 RandomSeed;
 } game_memory;
 
 #define GAME_UPDATE_AND_RENDER(name) void name(thread_context *Thread, game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)

@@ -384,6 +384,25 @@ IsTileAccessible(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTi
     return(IsAccessible);
 }
 
+u32
+GetRandomNumber(u32 *GameStateRandomSeed, u32 LowerBound, u32 UpperBound)
+{
+    *GameStateRandomSeed ^= *GameStateRandomSeed << 13;
+    *GameStateRandomSeed ^= *GameStateRandomSeed >> 17;
+    *GameStateRandomSeed ^= *GameStateRandomSeed << 5;
+
+    // UpperBound - LowerBound + 1 = the count of possible random numbers.
+    //      e.g., LowerBound = 2, UpperBound = 7 means we want a random number
+    //          between 2 and 7, inclusive of both 2 and 7.
+    //      7 - 2 + 1 = 6; we want a random number that is one of 6 possible values:
+    //          {2, 3, 4, 5, 6, 7}.
+
+    u32 NumberOfValidResults = UpperBound - LowerBound + 1;
+    u32 ToReturn = *GameStateRandomSeed % NumberOfValidResults;
+    ToReturn += LowerBound;
+    return(ToReturn);
+}
+
 #if defined __cplusplus
 extern "C"
 #endif
@@ -397,7 +416,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     game_state *GameState = (game_state *)Memory->PermanentStorage;
     if(!Memory->IsInitialized)
     {
-
+        GameState->RandomSeed = Memory->RandomSeed;
         InitializeArena(&GameState->WorldArena, 
                         (u8 *)Memory->PermanentStorage + sizeof(game_state),
                         Memory->PermanentStorageSize - sizeof(game_state));

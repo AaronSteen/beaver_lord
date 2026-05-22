@@ -128,6 +128,7 @@ struct game_state
     world_position PlayerPosition;
     memory_arena WorldArena;
     world *WorldPointer;
+    u32 RandomSeed;
 };
 
 

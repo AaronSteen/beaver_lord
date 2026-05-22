@@ -988,6 +988,7 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
             GameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
             GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
+            GameMemory.RandomSeed = Win32GetWallClock().LowPart;
 
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
