@@ -234,10 +234,10 @@ GetAbsTileFromRoomCoords(u32 Room, u32 TileInRoom, u32 TilesPerRoomInThisDimensi
     return(ToReturn);
 }
 
-inline room_coordinates
+inline room_position
 GetRoomCoordsFromAbsTiles(tile_map *TileMapPointer, u32 AbsTileY, u32 AbsTileX)
 {
-    room_coordinates ToReturn;
+    room_position ToReturn;
     ToReturn.RoomY = FloorReal32ToU32((real32)AbsTileY / (real32)TileMapPointer->TilesPerRoomY);
     ToReturn.RoomX = FloorReal32ToU32((real32)AbsTileX / (real32)TileMapPointer->TilesPerRoomX);
     ToReturn.TileInRoomY = AbsTileY - (ToReturn.RoomY * TileMapPointer->TilesPerRoomY);
@@ -291,6 +291,7 @@ SetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY,
 tile_value
 GetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY, u32 AbsTileX)
 {
+    tile_value ToReturn = TILE_INVALID;
     Assert(AbsTileY < TILES_IN_WORLD_Y);
     Assert(AbsTileX < TILES_IN_WORLD_X);
 
@@ -301,9 +302,11 @@ GetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY,
     Assert(ChunkPosition.TileInChunkX < TileMapPointer->ChunkDim);
 
     tile_chunk *TileChunkPointer = GetTileChunkPointerUnchecked(TileMapPointer, ChunkPosition.ChunkY, ChunkPosition.ChunkX);
-    Assert(TileChunkPointer->TilesArray);
-
-    tile_value ToReturn = (tile_value)TileChunkPointer->TilesArray[ChunkPosition.TileInChunkY * 
+    if(!TileChunkPointer->TilesArray)
+    {
+        return(ToReturn);
+    }
+    ToReturn = (tile_value)TileChunkPointer->TilesArray[ChunkPosition.TileInChunkY * 
         TileMapPointer->ChunkDim + 
         ChunkPosition.TileInChunkX];
     return(ToReturn);
@@ -403,6 +406,229 @@ GetRandomNumber(u32 *GameStateRandomSeed, u32 LowerBound, u32 UpperBound)
     return(ToReturn);
 }
 
+// inline u32
+// PickRandomElementInArray(u32 *RandomSeedPointer, u32 *Array, u32 ArraySize)
+// {
+//     u32 Choice = GetRandomNumber(RandomSeedPointer, 0, ArraySize-1);
+//     return(Choice);
+// }
+
+enum door
+{
+    DOOR_INVALID = 0,
+    DOOR_EAST = 1,
+    DOOR_NORTH = 2,
+    DOOR_WEST = 3,
+    DOOR_SOUTH = 4
+};
+
+enum door_status
+{
+    DOOR_STATUS_INVALID = 0,
+    ADJACENT_ROOM_INVALID = 1,
+    ADJACENT_ROOM_OCCUPIED = 2,
+    ADJACENT_ROOM_AVAILABLE = 3
+};
+
+tile_value
+GetTileValueFromRoomCoords(memory_arena *WorldArenaPointer, tile_map *TileMapPointer, room_position RoomPosition)
+{
+    u32 AbsTileY = GetAbsTileFromRoomCoords(RoomPosition.RoomY, 0, TileMapPointer->TilesPerRoomY);
+    u32 AbsTileX = GetAbsTileFromRoomCoords(RoomPosition.RoomX, 0, TileMapPointer->TilesPerRoomX);
+    tile_value TileValue = GetTileValue(WorldArenaPointer, TileMapPointer, AbsTileY, AbsTileX);
+    return(TileValue);
+}
+
+inline bool32
+IsRoomPositionInsideTileMap(tile_map *TileMapPointer, room_position RoomPosition)
+{
+    bool32 IsInsideTileMap = (
+                              (RoomPosition.RoomY >= 0) &&
+                              (RoomPosition.RoomY < TileMapPointer->RoomsInMapY) &&
+                              (RoomPosition.RoomX >= 0) &&
+                              (RoomPosition.RoomX < TileMapPointer->RoomsInMapX)
+                             );
+    return(IsInsideTileMap);
+}
+
+
+void
+GetDoorStatuses(memory_arena *WorldArenaPointer, tile_map *TileMapPointer, u32 *RandomSeedPointer, 
+         door_status *DoorStatusArray, room_position ThisRoomPosition)
+{
+    // if a door must be set because there is an adjacent room, set that door's value to 1.
+    // if a door must not be set because it would be beyond the tile map, set that door's value to -1.
+    // if a door is available for 
+
+    room_position EastRoomPosition = ThisRoomPosition;
+    EastRoomPosition.RoomX += 1;
+    if(IsRoomPositionInsideTileMap(TileMapPointer, EastRoomPosition) == false)
+    {
+        DoorStatusArray[DOOR_EAST] = ADJACENT_ROOM_INVALID;
+    }
+    else
+    {
+        tile_value EastRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, EastRoomPosition);
+        if(EastRoomBottomLeftTile == TILE_BLOCK)
+        {
+            DoorStatusArray[DOOR_EAST] = ADJACENT_ROOM_OCCUPIED;
+        }
+        else
+        {
+            DoorStatusArray[DOOR_EAST] = ADJACENT_ROOM_AVAILABLE;
+        }
+    }
+
+    room_position NorthRoomPosition = ThisRoomPosition;
+    NorthRoomPosition.RoomY += 1;
+    if(IsRoomPositionInsideTileMap(TileMapPointer, NorthRoomPosition) == false)
+    {
+        DoorStatusArray[DOOR_NORTH] = ADJACENT_ROOM_INVALID;
+    }
+    else
+    {
+        tile_value NorthRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, NorthRoomPosition);
+        if(NorthRoomBottomLeftTile == TILE_BLOCK)
+        {
+            DoorStatusArray[DOOR_NORTH] = ADJACENT_ROOM_OCCUPIED;
+        }
+        else
+        {
+            DoorStatusArray[DOOR_NORTH] = ADJACENT_ROOM_AVAILABLE;
+        }
+    }
+
+    room_position WestRoomPosition = ThisRoomPosition;
+    WestRoomPosition.RoomX -= 1;
+    if(IsRoomPositionInsideTileMap(TileMapPointer, WestRoomPosition) == false)
+    {
+        DoorStatusArray[DOOR_WEST] = ADJACENT_ROOM_INVALID;
+    }
+    else
+    {
+        tile_value WestRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, WestRoomPosition);
+        if(WestRoomBottomLeftTile == TILE_BLOCK)
+        {
+            DoorStatusArray[DOOR_WEST] = ADJACENT_ROOM_OCCUPIED;
+        }
+        else
+        {
+            DoorStatusArray[DOOR_WEST] = ADJACENT_ROOM_AVAILABLE;
+        }
+    }   
+
+    room_position SouthRoomPosition = ThisRoomPosition;
+    SouthRoomPosition.RoomY -= 1;
+    if(IsRoomPositionInsideTileMap(TileMapPointer, SouthRoomPosition) == false)
+    {
+        DoorStatusArray[DOOR_SOUTH] = ADJACENT_ROOM_INVALID;
+    }
+    else
+    {
+        tile_value SouthRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, SouthRoomPosition);
+        if(SouthRoomBottomLeftTile == TILE_BLOCK)
+        {
+            DoorStatusArray[DOOR_SOUTH] = ADJACENT_ROOM_OCCUPIED;
+        }
+        else
+        {
+            DoorStatusArray[DOOR_SOUTH] = ADJACENT_ROOM_AVAILABLE;
+        }
+    }   
+}
+
+u32
+MakePathOfNRooms(memory_arena *WorldArenaPointer, u32 *RandomSeedPointer, tile_map *TileMapPointer, 
+                 u32 RoomsRemaining, u32 FirstRoomY, u32 FirstRoomX)
+{
+    --RoomsRemaining;
+    if(RoomsRemaining == 0)
+    {
+        return(0);
+    }
+
+    // We only need to set Room X and Y coordinates here because we initialize the struct
+    //      to zero and we want TileInRoom X and Y fields to both be zero
+    room_position RoomPosition = {0};
+    RoomPosition.RoomY = FirstRoomY;
+    RoomPosition.RoomX = FirstRoomX;
+
+    door_status DoorStatusArray[5] = {(door_status)0};
+    GetDoorStatuses(WorldArenaPointer, TileMapPointer, RandomSeedPointer, 
+                         (door_status *)DoorStatusArray, RoomPosition);
+
+    
+    // Now set values for the doors in this room for walls which abut the edge of the
+    //      tilemap and for walls whose doors should connect to an adjacent room
+    bool32 DoorValues[5] = {0};
+    for(door Door = DOOR_EAST;
+        Door <= DOOR_SOUTH;
+        Door = (door)(Door + 1))
+    {
+        if(DoorStatusArray[Door] == ADJACENT_ROOM_OCCUPIED)
+        {
+            DoorValues[Door] = true;
+        }
+    }
+
+    // Check to see if every wall either abuts tilemap edge or has a door
+    //      connecting to an adjacent room. If so, we have hit a dead end
+    //      and cannot make any more rooms on this pass. Make the current
+    //      room and return remaining rooms.
+    bool32 CanMakeNextRoom = false;
+    for(door Door = DOOR_EAST;
+        Door <= DOOR_SOUTH;
+        Door = (door)(Door + 1))
+    {
+        if(DoorStatusArray[Door] == ADJACENT_ROOM_AVAILABLE)
+        {
+            CanMakeNextRoom = true;
+            break;
+        }
+    }
+    if(CanMakeNextRoom == false)
+    {
+        MakeSimpleRoom(WorldArenaPointer, TileMapPointer, FirstRoomY, FirstRoomX,
+                       DoorValues[DOOR_EAST], DoorValues[DOOR_NORTH], DoorValues[DOOR_WEST], DoorValues[DOOR_SOUTH]);
+        return(RoomsRemaining);
+    }
+
+    // Otherwise there is at least one door with a nonadjacent room; pick one of these to make the next room off of.
+    //      Keep generating random indices into the doors array until we find a door that hasn't been set yet.
+    door DoorToNextRoom = (door)GetRandomNumber(RandomSeedPointer, 1, 4);
+    while( (DoorStatusArray[DoorToNextRoom] == ADJACENT_ROOM_INVALID) || 
+           (DoorStatusArray[DoorToNextRoom] == ADJACENT_ROOM_OCCUPIED) )
+    {
+        DoorToNextRoom = (door)GetRandomNumber(RandomSeedPointer, 1, 4); 
+    }
+
+    // Set the door to the next room to be true and make the current room
+    DoorValues[DoorToNextRoom] = true;
+    MakeSimpleRoom(WorldArenaPointer, TileMapPointer, FirstRoomY, FirstRoomX,
+                   DoorValues[DOOR_EAST], DoorValues[DOOR_NORTH], DoorValues[DOOR_WEST], DoorValues[DOOR_SOUTH]);
+
+    // Set the room coordinates for the next room to create and call the function again
+    if(DoorToNextRoom == DOOR_EAST)
+    {
+        FirstRoomX += 1;
+    }
+    if(DoorToNextRoom == DOOR_NORTH)
+    {
+        FirstRoomY += 1;
+    }
+    if(DoorToNextRoom == DOOR_WEST)
+    {
+        FirstRoomX -= 1;
+    }
+    if(DoorToNextRoom == DOOR_SOUTH)
+    {
+        FirstRoomY -= 1;
+    }
+    u32 RoomsMade = MakePathOfNRooms(WorldArenaPointer, RandomSeedPointer, TileMapPointer, 
+                                         RoomsRemaining, FirstRoomY, FirstRoomX);
+    return(RoomsMade);
+}
+
 #if defined __cplusplus
 extern "C"
 #endif
@@ -458,61 +684,16 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         //              If a room is already there, the code should just draw a connecting door and move on to the next door,
         //                  if there is one.
 
-        u32 CenterRoomYCoord = 10;
-        u32 CenterRoomXCoord = 10;
-        MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, CenterRoomYCoord, CenterRoomXCoord, true, true, true, true);
-        enum door
-        {
-            DOOR_EAST = 1,
-            DOOR_NORTH = 2,
-            DOOR_WEST = 3,
-            DOOR_SOUTH = 4
-        };
-        for(int DoorInStartingRoom = DOOR_EAST;
-            DoorInStartingRoom <= DOOR_SOUTH;
-            ++DoorInStartingRoom)
-        {
-            u32 RoomY = CenterRoomYCoord;
-            u32 RoomX = CenterRoomXCoord;
-            if(DoorInStartingRoom == DOOR_EAST)
-            {
-                RoomX += 1;
-            }
-            if(DoorInStartingRoom == DOOR_NORTH)
-            {
-                RoomY += 1;
-            }
-            if(DoorInStartingRoom == DOOR_WEST)
-            {
-                RoomX -= 1;
-            }
-            if(DoorInStartingRoom == DOOR_SOUTH)
-            {
-                RoomY -= 1;
-            }
+        u32 CenterRoomY = 10;
+        u32 CenterRoomX = 10;
+        MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, CenterRoomY, CenterRoomX, true, true, true, true);
+        u32 FirstRoomY = CenterRoomY + 1;
+        u32 FirstRoomX = CenterRoomX;
+        u32 NumberOfRoomsToMake = 10;
+        MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, NumberOfRoomsToMake, FirstRoomY, FirstRoomX);
 
-            u32 NumberOfDoorsToMake = GetRandomNumber(&GameState->RandomSeed, 1, 4);
-            bool32 DrawDoorOnThisWall[5] = {0};
-            for(int NthDoorToMake = 1;
-                NthDoorToMake <= NumberOfDoorsToMake;
-                ++NthDoorToMake)
-            {
-                u32 WhichDoor;
-                do
-                {
-                    WhichDoor = GetRandomNumber(&GameState->RandomSeed, 1, 4);
-                } while(DrawDoorOnThisWall[WhichDoor] == true);
-                DrawDoorOnThisWall[WhichDoor] = true;
-            }
-            MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 
-                           RoomY, RoomX, 
-                           DrawDoorOnThisWall[DOOR_EAST], 
-                           DrawDoorOnThisWall[DOOR_NORTH], 
-                           DrawDoorOnThisWall[DOOR_WEST], 
-                           DrawDoorOnThisWall[DOOR_SOUTH]); 
-        }
-        GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomYCoord, 4, TileMapPointer->TilesPerRoomY);
-        GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
+        GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomY, 4, TileMapPointer->TilesPerRoomY);
+        GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomX, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffsetY = 0.6f;
         GameState->PlayerPosition.TileOffsetX = -0.4f;
 
@@ -588,7 +769,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     real32 ScreenCoordZeroY = Buffer->Height;
     real32 ScreenCoordZeroX = -((real32)TileMapPointer->TileSideInPixels * 0.5f);
-    room_coordinates PlayerRoom = GetRoomCoordsFromAbsTiles(TileMapPointer, 
+    room_position PlayerRoom = GetRoomCoordsFromAbsTiles(TileMapPointer, 
                                                              GameState->PlayerPosition.AbsTileY,
                                                              GameState->PlayerPosition.AbsTileX);
     for(u32 RelRow = 0;

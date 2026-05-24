@@ -110,7 +110,7 @@ struct tile_map
     tile_chunk *TileChunksArray;
 };
 
-struct room_coordinates
+struct room_position
 {
     u32 RoomY;
     u32 RoomX;
