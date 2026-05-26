@@ -150,11 +150,11 @@ DrawTileWithOutline(game_offscreen_buffer *Buffer,
             X < MaxX;
             ++X)
         {
-            if((Y == MinY) || (Y == MaxY - 1))
+            if(Y == MinY)
             {
                 *Pixel++ = 0;
             }
-            else if((X == MinX) || (X == MaxX - 1))
+            else if(X == MinX)
             {
                 *Pixel++ = 0;
             }
@@ -228,9 +228,9 @@ PushToArena_(memory_arena *ArenaPointer, memory_index NumBytes)
 #define PushArray(ArenaPointer, Type, HowMany) (Type *)PushToArena_((ArenaPointer), sizeof(Type) * (HowMany))
 
 inline u32
-GetAbsTileFromRoomCoords(u32 Room, u32 TileInRoom, u32 TilesPerRoomInThisDimension)
+GetAbsTileFromRoomCoords(u32 Room, u32 OffsetFromBottomOfRoom, u32 TilesPerRoomInThisDimension)
 {
-    u32 ToReturn = Room * TilesPerRoomInThisDimension + TileInRoom;
+    u32 ToReturn = Room * TilesPerRoomInThisDimension + OffsetFromBottomOfRoom;
     return(ToReturn);
 }
 
@@ -291,6 +291,7 @@ SetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY,
 tile_value
 GetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY, u32 AbsTileX)
 {
+    tile_value ToReturn = TILE_INVALID;
     Assert(AbsTileY < TILES_IN_WORLD_Y);
     Assert(AbsTileX < TILES_IN_WORLD_X);
 
@@ -301,12 +302,17 @@ GetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY,
     Assert(ChunkPosition.TileInChunkX < TileMapPointer->ChunkDim);
 
     tile_chunk *TileChunkPointer = GetTileChunkPointerUnchecked(TileMapPointer, ChunkPosition.ChunkY, ChunkPosition.ChunkX);
-    Assert(TileChunkPointer->TilesArray);
-
-    tile_value ToReturn = (tile_value)TileChunkPointer->TilesArray[ChunkPosition.TileInChunkY * 
-        TileMapPointer->ChunkDim + 
-        ChunkPosition.TileInChunkX];
-    return(ToReturn);
+    if(!TileChunkPointer->TilesArray)
+    {
+        return(ToReturn);
+    }
+    else
+    {
+        ToReturn = (tile_value)TileChunkPointer->TilesArray[ChunkPosition.TileInChunkY * 
+                                                            TileMapPointer->ChunkDim + 
+                                                            ChunkPosition.TileInChunkX];
+        return(ToReturn);
+    }
 }
 
 void
@@ -347,7 +353,17 @@ MakeSimpleRoom(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 RoomY, 
     }
     if(DoorNorth)
     {
-        u32 DoorNorthAbsTileY = GetAbsTileFromRoomCoords(RoomY, 0, TileMapPointer->TilesPerRoomY); 
+        // Note for DoorNorth and DoorSouth:
+        //      Our addressing convention defines increasing Y values to be further away from the "bottom" of the world;
+        //          as the player moves "up" on the screen, their AbsTileY value increases and they get further from
+        //          the 0th address of the tile address space.
+        //      Rooms "start" in their bottom row; as AbsTile values increase, we move further up in the room.
+        //      Therefore, DoorNorth has as its Y coordinate:
+        //          DoorNorthYCoord = RoomY * TilesPerRoomY + (TilesPerRoomY - 1)
+        //          e.g., for room 11,
+        //          DoorNorthYCoord = 11 * 9 + (9 - 1)
+        //                          = 11 * 9 + 8 = 99 + 8 = 107
+        u32 DoorNorthAbsTileY = GetAbsTileFromRoomCoords(RoomY, (TileMapPointer->TilesPerRoomY - 1), TileMapPointer->TilesPerRoomY); 
         u32 DoorNorthAbsTileX = GetAbsTileFromRoomCoords(RoomX, (TileMapPointer->TilesPerRoomX / 2), TileMapPointer->TilesPerRoomX); 
         SetTileValue(ArenaPointer, TileMapPointer, DoorNorthAbsTileY, DoorNorthAbsTileX, TILE_WATER);
     }
@@ -359,7 +375,7 @@ MakeSimpleRoom(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 RoomY, 
     }
     if(DoorSouth)
     {
-        u32 DoorSouthAbsTileY = GetAbsTileFromRoomCoords(RoomY, (TileMapPointer->TilesPerRoomY - 1), TileMapPointer->TilesPerRoomY); 
+        u32 DoorSouthAbsTileY = GetAbsTileFromRoomCoords(RoomY, 0, TileMapPointer->TilesPerRoomY); 
         u32 DoorSouthAbsTileX = GetAbsTileFromRoomCoords(RoomX, (TileMapPointer->TilesPerRoomX / 2), TileMapPointer->TilesPerRoomX); 
         SetTileValue(ArenaPointer, TileMapPointer, DoorSouthAbsTileY, DoorSouthAbsTileX, TILE_WATER);
     }
@@ -417,6 +433,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(!Memory->IsInitialized)
     {
         GameState->RandomSeed = Memory->RandomSeed;
+        GameState->BirdsEye = false;
         InitializeArena(&GameState->WorldArena, 
                         (u8 *)Memory->PermanentStorage + sizeof(game_state),
                         Memory->PermanentStorageSize - sizeof(game_state));
@@ -428,7 +445,6 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMapPointer->ChunkDim = 16;
         TileMapPointer->TileSideInMeters = 1.4f;
         TileMapPointer->TileSideInPixels = 60;
-        TileMapPointer->MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
         TileMapPointer->RoomsInMapY = 21;
         TileMapPointer->RoomsInMapX = 21;
         TileMapPointer->TilesPerRoomY = 9;
@@ -460,57 +476,59 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         u32 CenterRoomYCoord = 10;
         u32 CenterRoomXCoord = 10;
-        MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, CenterRoomYCoord, CenterRoomXCoord, true, true, true, true);
-        enum door
-        {
-            DOOR_EAST = 1,
-            DOOR_NORTH = 2,
-            DOOR_WEST = 3,
-            DOOR_SOUTH = 4
-        };
-        for(int DoorInStartingRoom = DOOR_EAST;
-            DoorInStartingRoom <= DOOR_SOUTH;
-            ++DoorInStartingRoom)
-        {
-            u32 RoomY = CenterRoomYCoord;
-            u32 RoomX = CenterRoomXCoord;
-            if(DoorInStartingRoom == DOOR_EAST)
-            {
-                RoomX += 1;
-            }
-            if(DoorInStartingRoom == DOOR_NORTH)
-            {
-                RoomY += 1;
-            }
-            if(DoorInStartingRoom == DOOR_WEST)
-            {
-                RoomX -= 1;
-            }
-            if(DoorInStartingRoom == DOOR_SOUTH)
-            {
-                RoomY -= 1;
-            }
+        MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 10, 10, true, true, true, true);
+        MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 11, 10, false, false, false, true);
 
-            u32 NumberOfDoorsToMake = GetRandomNumber(&GameState->RandomSeed, 1, 4);
-            bool32 DrawDoorOnThisWall[5] = {0};
-            for(int NthDoorToMake = 1;
-                NthDoorToMake <= NumberOfDoorsToMake;
-                ++NthDoorToMake)
-            {
-                u32 WhichDoor;
-                do
-                {
-                    WhichDoor = GetRandomNumber(&GameState->RandomSeed, 1, 4);
-                } while(DrawDoorOnThisWall[WhichDoor] == true);
-                DrawDoorOnThisWall[WhichDoor] = true;
-            }
-            MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 
-                           RoomY, RoomX, 
-                           DrawDoorOnThisWall[DOOR_EAST], 
-                           DrawDoorOnThisWall[DOOR_NORTH], 
-                           DrawDoorOnThisWall[DOOR_WEST], 
-                           DrawDoorOnThisWall[DOOR_SOUTH]); 
-        }
+        // enum door
+        // {
+        //     DOOR_EAST = 1,
+        //     DOOR_NORTH = 2,
+        //     DOOR_WEST = 3,
+        //     DOOR_SOUTH = 4
+        // };
+        // for(int DoorInStartingRoom = DOOR_EAST;
+        //     DoorInStartingRoom <= DOOR_SOUTH;
+        //     ++DoorInStartingRoom)
+        // {
+        //     u32 RoomY = CenterRoomYCoord;
+        //     u32 RoomX = CenterRoomXCoord;
+        //     if(DoorInStartingRoom == DOOR_EAST)
+        //     {
+        //         RoomX += 1;
+        //     }
+        //     if(DoorInStartingRoom == DOOR_NORTH)
+        //     {
+        //         RoomY += 1;
+        //     }
+        //     if(DoorInStartingRoom == DOOR_WEST)
+        //     {
+        //         RoomX -= 1;
+        //     }
+        //     if(DoorInStartingRoom == DOOR_SOUTH)
+        //     {
+        //         RoomY -= 1;
+        //     }
+        //
+        //     u32 NumberOfDoorsToMake = GetRandomNumber(&GameState->RandomSeed, 1, 4);
+        //     bool32 DrawDoorOnThisWall[5] = {0};
+        //     for(int NthDoorToMake = 1;
+        //         NthDoorToMake <= NumberOfDoorsToMake;
+        //         ++NthDoorToMake)
+        //     {
+        //         u32 WhichDoor;
+        //         do
+        //         {
+        //             WhichDoor = GetRandomNumber(&GameState->RandomSeed, 1, 4);
+        //         } while(DrawDoorOnThisWall[WhichDoor] == true);
+        //         DrawDoorOnThisWall[WhichDoor] = true;
+        //     }
+        //     MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 
+        //                    RoomY, RoomX, 
+        //                    DrawDoorOnThisWall[DOOR_EAST], 
+        //                    DrawDoorOnThisWall[DOOR_NORTH], 
+        //                    DrawDoorOnThisWall[DOOR_WEST], 
+        //                    DrawDoorOnThisWall[DOOR_SOUTH]); 
+        // }
         GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomYCoord, 4, TileMapPointer->TilesPerRoomY);
         GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffsetY = 0.6f;
@@ -550,6 +568,11 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             {
                 dPlayerY -= 1.0f;
             }
+            if( (Controller->ActionDown.EndedDown) && 
+                (Controller->ActionDown.HalfTransitionCount == 1) )
+            {
+                GameState->BirdsEye = !GameState->BirdsEye;
+            }
 
             real32 PlayerSpeed = 2.0f;
             if(Controller->Back.EndedDown)
@@ -585,78 +608,168 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                   0, Buffer->Height,
                   0, Buffer->Width,
                   0.75f, 0.25f, 0.5f);
-
-    real32 ScreenCoordZeroY = Buffer->Height;
-    real32 ScreenCoordZeroX = -((real32)TileMapPointer->TileSideInPixels * 0.5f);
-    room_coordinates PlayerRoom = GetRoomCoordsFromAbsTiles(TileMapPointer, 
-                                                             GameState->PlayerPosition.AbsTileY,
-                                                             GameState->PlayerPosition.AbsTileX);
-    for(u32 RelRow = 0;
-        RelRow < TileMapPointer->TilesPerRoomY;
-        ++RelRow)
+    if(GameState->BirdsEye == true)
     {
-        for(u32 RelCol = 0;
-            RelCol < TileMapPointer->TilesPerRoomX;
-            ++RelCol)
-        {
-            real32 TileR = WATER_R;
-            real32 TileG = WATER_G;
-            real32 TileB = WATER_B;
+        // Draw tiles
+        TileMapPointer->TileSideInPixels = 15;
+        real32 MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
+        real32 ScreenCenterY = (real32)Buffer->Height * 0.5f;
+        real32 ScreenCenterX = (real32)Buffer->Width * 0.5f;
 
-            u32 ThisTileAbsY = GetAbsTileFromRoomCoords(PlayerRoom.RoomY, RelRow, TileMapPointer->TilesPerRoomY);
-            u32 ThisTileAbsX = GetAbsTileFromRoomCoords(PlayerRoom.RoomX, RelCol, TileMapPointer->TilesPerRoomX);
-            tile_value TileValue = GetTileValue(&GameState->WorldArena, TileMapPointer, ThisTileAbsY, ThisTileAbsX);
-            if(TileValue == TILE_BLOCK)
+        for(int RelRow = -40;
+            RelRow < 40;
+            ++RelRow)
+        {
+            for(int RelCol = -80;
+                RelCol < 80;
+                ++RelCol)
             {
-                TileR = BLOCK_R;
-                TileG = BLOCK_G;
-                TileB = BLOCK_B;
+                world_position *PlayerPosition = &GameState->PlayerPosition;
+
+                // Get tiles starting from the top left relative to the player
+                u32 TileToDrawY = PlayerPosition->AbsTileY - RelRow;
+                u32 TileToDrawX = PlayerPosition->AbsTileX + RelCol;
+                tile_value TileValue = GetTileValue(&GameState->WorldArena,
+                                                    TileMapPointer,
+                                                    TileToDrawY,
+                                                    TileToDrawX);
+                if(TileValue != TILE_INVALID)
+                {
+                    real32 TileR = WATER_R;
+                    real32 TileG = WATER_G;
+                    real32 TileB = WATER_B;
+                    if(TileValue == TILE_BLOCK)
+                    {
+                        TileR = BLOCK_R;
+                        TileG = BLOCK_G;
+                        TileB = BLOCK_B;
+                    }
+                    if( (PlayerPosition->AbsTileY == TileToDrawY) &&
+                        (PlayerPosition->AbsTileX == TileToDrawX) )
+                    {
+                        TileR = 0.25f;
+                        TileG = 0.25f;
+                        TileB = 0.25f;
+                    }
+
+                    // When we render in bird's-eye, player is always drawn at the center of the screen; they do not move
+                    //      in screen space.
+                    //
+                    //      If the player "moves" upward, the distance between the player and a given tile above them is 
+                    //          decreased. The given tile must be rendered closer to the center of the screen.
+                    //
+                    //
+
+                    // If the player moves up, the distance between the player and a given tile above them is reduced.
+                    //      Therefore, they 
+                    //      
+                    real32 TileScreenCoordCenterY = ScreenCenterY + 
+                        (RelRow * TileMapPointer->TileSideInPixels) + 
+                        (PlayerPosition->TileOffsetY * MetersToPixels);
+                    real32 TileScreenCoordCenterX = ScreenCenterX +
+                        (RelCol * TileMapPointer->TileSideInPixels) -
+                        (PlayerPosition->TileOffsetX * MetersToPixels);
+                    real32 TileScreenCoordMinY = TileScreenCoordCenterY - (TileMapPointer->TileSideInPixels * 0.5f);
+                    real32 TileScreenCoordMinX = TileScreenCoordCenterX - (TileMapPointer->TileSideInPixels * 0.5f);
+                    real32 TileScreenCoordMaxY = TileScreenCoordMinY + TileMapPointer->TileSideInPixels;
+                    real32 TileScreenCoordMaxX = TileScreenCoordMinX + TileMapPointer->TileSideInPixels;
+                    DrawTileWithOutline(Buffer,
+                                        TileScreenCoordMinY, TileScreenCoordMaxY,
+                                        TileScreenCoordMinX, TileScreenCoordMaxX,
+                                        TileR, TileG, TileB);
+                }
             }
-            if( (RelRow == PlayerRoom.TileInRoomY) && (RelCol == PlayerRoom.TileInRoomX) )
-            {
-                TileR = 0.25f;
-                TileG = 0.25f;
-                TileB = 0.25f;
-            }
-            real32 TileBottom = ScreenCoordZeroY - (RelRow * TileMapPointer->TileSideInPixels);
-            real32 TileTop = TileBottom - TileMapPointer->TileSideInPixels;
-            real32 TileLeft = ScreenCoordZeroX + (RelCol * TileMapPointer->TileSideInPixels);
-            real32 TileRight = TileLeft + TileMapPointer->TileSideInPixels;
-            DrawTileWithOutline(Buffer,
-                                TileTop, TileBottom,
-                                TileLeft, TileRight,
-                                TileR, TileG, TileB);
         }
 
+        // Draw player
+        world_position *PlayerPosition = &GameState->PlayerPosition;
+        real32 PlayerScreenCoordMinY = ScreenCenterY - (PLAYER_HEIGHT * MetersToPixels);
+        real32 PlayerScreenCoordMaxY = PlayerScreenCoordMinY + (PLAYER_HEIGHT * MetersToPixels); // this is just ScreenCenterY
+        real32 PlayerScreenCoordMinX = ScreenCenterX - (PLAYER_WIDTH * 0.5f * MetersToPixels);
+        real32 PlayerScreenCoordMaxX = PlayerScreenCoordMinX + (PLAYER_WIDTH * MetersToPixels);
+        DrawRectangle(Buffer,
+                      PlayerScreenCoordMinY, PlayerScreenCoordMaxY,
+                      PlayerScreenCoordMinX, PlayerScreenCoordMaxX,
+                      PLAYER_R, PLAYER_G, PLAYER_B);
     }
+    else
+    {
+        TileMapPointer->TileSideInPixels = 60;
+        real32 MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
+        
+        // draw tiles
+        real32 ScreenCoordZeroY = Buffer->Height;
+        real32 ScreenCoordZeroX = -((real32)TileMapPointer->TileSideInPixels * 0.5f);
+        room_coordinates PlayerRoom = GetRoomCoordsFromAbsTiles(TileMapPointer, 
+                                                                GameState->PlayerPosition.AbsTileY,
+                                                                GameState->PlayerPosition.AbsTileX);
+        for(u32 RelRow = 0;
+            RelRow < TileMapPointer->TilesPerRoomY;
+            ++RelRow)
+        {
+            for(u32 RelCol = 0;
+                RelCol < TileMapPointer->TilesPerRoomX;
+                ++RelCol)
+            {
+                real32 TileR = WATER_R;
+                real32 TileG = WATER_G;
+                real32 TileB = WATER_B;
 
-    // Draw player
-    real32 PlayerBottom = ScreenCoordZeroY - 
-                            (PlayerRoom.TileInRoomY * TileMapPointer->TileSideInPixels) - 
-                            ( 
-                             ( (TileMapPointer->TileSideInMeters / 2) + GameState->PlayerPosition.TileOffsetY ) * 
-                              TileMapPointer->MetersToPixels
-                            );
-    real32 PlayerTop    = PlayerBottom - 
-                            (PLAYER_HEIGHT * TileMapPointer->MetersToPixels);
-    real32 PlayerLeft   = ScreenCoordZeroX +
-                            (
-                                (PlayerRoom.TileInRoomX * TileMapPointer->TileSideInPixels) +
+                u32 ThisTileAbsY = GetAbsTileFromRoomCoords(PlayerRoom.RoomY, RelRow, TileMapPointer->TilesPerRoomY);
+                u32 ThisTileAbsX = GetAbsTileFromRoomCoords(PlayerRoom.RoomX, RelCol, TileMapPointer->TilesPerRoomX);
+                tile_value TileValue = GetTileValue(&GameState->WorldArena, TileMapPointer, ThisTileAbsY, ThisTileAbsX);
+                if(TileValue == TILE_BLOCK)
+                {
+                    TileR = BLOCK_R;
+                    TileG = BLOCK_G;
+                    TileB = BLOCK_B;
+                }
+                if( (RelRow == PlayerRoom.TileInRoomY) && (RelCol == PlayerRoom.TileInRoomX) )
+                {
+                    TileR = 0.25f;
+                    TileG = 0.25f;
+                    TileB = 0.25f;
+                }
+                real32 TileBottom = ScreenCoordZeroY - (RelRow * TileMapPointer->TileSideInPixels);
+                real32 TileTop = TileBottom - TileMapPointer->TileSideInPixels;
+                real32 TileLeft = ScreenCoordZeroX + (RelCol * TileMapPointer->TileSideInPixels);
+                real32 TileRight = TileLeft + TileMapPointer->TileSideInPixels;
+                DrawTileWithOutline(Buffer,
+                                    TileTop, TileBottom,
+                                    TileLeft, TileRight,
+                                    TileR, TileG, TileB);
+            }
+
+        }
+
+        // Draw player
+        real32 PlayerBottom = ScreenCoordZeroY - 
+                                (PlayerRoom.TileInRoomY * TileMapPointer->TileSideInPixels) - 
+                                ( 
+                                 ( (TileMapPointer->TileSideInMeters / 2) + GameState->PlayerPosition.TileOffsetY ) * 
+                                  MetersToPixels
+                                );
+        real32 PlayerTop    = PlayerBottom - 
+                                (PLAYER_HEIGHT * MetersToPixels);
+        real32 PlayerLeft   = ScreenCoordZeroX +
                                 (
-                                 ( 
-                                  (TileMapPointer->TileSideInMeters / 2) + 
-                                  (GameState->PlayerPosition.TileOffsetX) -
-                                  (PLAYER_WIDTH * 0.5f)
-                                 ) *
-                                 TileMapPointer->MetersToPixels
-                                )  
-                            );
-    real32 PlayerRight  = PlayerLeft +
-                            (PLAYER_WIDTH * TileMapPointer->MetersToPixels);
-    DrawRectangle(Buffer,
-                  PlayerTop, PlayerBottom,
-                  PlayerLeft, PlayerRight,
-                  PLAYER_R, PLAYER_G, PLAYER_B);
+                                    (PlayerRoom.TileInRoomX * TileMapPointer->TileSideInPixels) +
+                                    (
+                                     ( 
+                                      (TileMapPointer->TileSideInMeters / 2) + 
+                                      (GameState->PlayerPosition.TileOffsetX) -
+                                      (PLAYER_WIDTH * 0.5f)
+                                     ) *
+                                     MetersToPixels
+                                    )  
+                                );
+        real32 PlayerRight  = PlayerLeft +
+                                (PLAYER_WIDTH * MetersToPixels);
+        DrawRectangle(Buffer,
+                      PlayerTop, PlayerBottom,
+                      PlayerLeft, PlayerRight,
+                      PLAYER_R, PLAYER_G, PLAYER_B);
+    }
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

@@ -702,19 +702,19 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                     {
                         Win32ProcessKeyboardMessage(&KeyboardController->RightShoulder, IsDown);
                     }
-                    else if(VKCode == VK_UP)
+                    else if(VKCode == 'I')
                     {
                         Win32ProcessKeyboardMessage(&KeyboardController->ActionUp, IsDown);
                     }
-                    else if(VKCode == VK_LEFT)
+                    else if(VKCode == 'J')
                     {
                         Win32ProcessKeyboardMessage(&KeyboardController->ActionLeft, IsDown);
                     }
-                    else if(VKCode == VK_DOWN)
+                    else if(VKCode == 'K')
                     {
                         Win32ProcessKeyboardMessage(&KeyboardController->ActionDown, IsDown);
                     }
-                    else if(VKCode == VK_RIGHT)
+                    else if(VKCode == 'L')
                     {
                         Win32ProcessKeyboardMessage(&KeyboardController->ActionRight, IsDown);
                     }
