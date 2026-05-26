@@ -97,7 +97,6 @@ struct tile_map
 
     real32 TileSideInMeters;
     s32 TileSideInPixels;
-    real32 MetersToPixels;
 
     u32 RoomsInMapY;
     u32 RoomsInMapX;
@@ -128,6 +127,7 @@ struct game_state
     world_position PlayerPosition;
     memory_arena WorldArena;
     world *WorldPointer;
+    bool32 BirdsEye;
     u32 RandomSeed;
 };
 
