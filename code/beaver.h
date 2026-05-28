@@ -22,20 +22,21 @@
 #define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
 // TODO(casey): swap, min, max ... macros???
 
+inline game_controller_input *GetController(game_input *Input, int unsigned ControllerIndex)
+{
+    Assert(ControllerIndex < ArrayCount(Input->Controllers));
+    
+    game_controller_input *Result = &Input->Controllers[ControllerIndex];
+    return(Result);
+}
+
+#include "beaver_math.h"
 inline u32
 SafeTruncateUInt64(u64 Value)
 {
     // TODO(casey): Defines for maximum values
     Assert(Value <= 0xFFFFFFFF);
     u32 Result = (u32)Value;
-    return(Result);
-}
-
-inline game_controller_input *GetController(game_input *Input, int unsigned ControllerIndex)
-{
-    Assert(ControllerIndex < ArrayCount(Input->Controllers));
-    
-    game_controller_input *Result = &Input->Controllers[ControllerIndex];
     return(Result);
 }
 
@@ -62,26 +63,11 @@ struct tile_chunk_position
     u32 TileInChunkY;
 };
 
-struct world_position
+struct tile_map_position
 {
-    /* TODO(casey):
-
-       Take the tile map x and y
-       and the tile x and y
-
-       and pack them into single 32-bit values for x and y
-       where there is some low bits for the tile index
-       and the high bits are the tile "page"
-
-       (NOTE we can eliminate the need for floor!)
-    */
     u32 AbsTileX;
     u32 AbsTileY;
-
-    // TODO(casey): Should these be from the center of a tile?
-    // TODO(casey): Rename to offset X and Y
-    real32 TileOffsetX;
-    real32 TileOffsetY;
+    vector2 TileOffset;
 };
 
 struct tile_chunk
@@ -124,7 +110,7 @@ struct world
 
 struct game_state
 {
-    world_position PlayerPosition;
+    tile_map_position PlayerPosition;
     memory_arena WorldArena;
     world *WorldPointer;
     bool32 BirdsEye;
