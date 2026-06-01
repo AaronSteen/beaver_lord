@@ -642,6 +642,51 @@ MakePathOfNRooms(memory_arena *WorldArenaPointer, u32 *RandomSeedPointer, tile_m
     return(RoomsMade);
 }
 
+vector2
+MapTileXYToScreen(tile_map *TileMapPointer, vector2 Origin,
+                  s32 TileX, s32 TileY, vector2 TileOffset,
+                  real32 MetersToPixels)
+{
+    //   In tile map space, Y proceeds from the bottom
+    //    _________________________ y=max
+    //   |                        | -
+    //   |                        | -
+    //   |                        | -
+    //   |                        | -
+    //   |                        | -
+    //   |                        | -
+    //   |                        | -
+    //   |________________________| y = 0
+    // x=0 + + + + + + + + + + + + x = max
+    // 
+    // In screen space, unlike tile map space, Y proceeds from the top
+    //    _________________________ y=0
+    //   |                        | +
+    //   |                        | +
+    //   |                        | +
+    //   |                        | +
+    //   |________________________| y = max
+    // x=0 + + + + + + + + + + + + x = max
+    //
+    //    ______________
+    //  |       +y      |
+    //  |       +       |
+    //  |  x- - o + +x  |    
+    //  |       -       |
+    //  |       -y      |
+    //   ---------------
+    //   Note tile offset is relative to the center of a tile.
+
+    vector2 Result = {Origin.X, Origin.Y};
+    Result.X += (TileX * TileMapPointer->TileSideInPixels);
+    Result.X += (TileOffset.X * MetersToPixels);
+
+    Result.Y -= (TileY * TileMapPointer->TileSideInPixels);
+    Result.Y -= (TileOffset.Y * MetersToPixels);
+
+    return(Result);
+}
+
 #if defined __cplusplus
 extern "C"
 #endif
@@ -785,48 +830,55 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         game_controller_input *Controller = GetController(Input, ControllerIndex);
         if(Controller->IsAnalog)
         {
-            // NOTE(casey): Use analog movement tuning
         }
         else
         {
-            vector2 dPlayer = {};
-            if(Controller->MoveRight.EndedDown)
-            {
-                dPlayer.X += 1.0f;
-            }
-            if(Controller->MoveUp.EndedDown)
-            {
-                dPlayer.Y += 1.0f;
-            }
-            if(Controller->MoveLeft.EndedDown)
-            {
-                dPlayer.X -= 1.0f;
-            }
-            if(Controller->MoveDown.EndedDown)
-            {
-                dPlayer.Y -= 1.0f;
-            }
-
             if( (Controller->ActionDown.EndedDown) && 
                 (Controller->ActionDown.HalfTransitionCount == 1) )
             {
                 GameState->BirdsEye = !GameState->BirdsEye;
             }
 
-            real32 PlayerSpeed = 2.0f;
+            vector2 ddPlayer = {};
+
+            if(Controller->MoveRight.EndedDown)
+            {
+                ddPlayer.X += 1.0f;
+            }
+            if(Controller->MoveUp.EndedDown)
+            {
+                ddPlayer.Y += 1.0f;
+            }
+            if(Controller->MoveLeft.EndedDown)
+            {
+                ddPlayer.X -= 1.0f;
+            }
+            if(Controller->MoveDown.EndedDown)
+            {
+                ddPlayer.Y -= 1.0f;
+            }
+
+            if( (ddPlayer.X != 0.0f) && (ddPlayer.Y != 0.0f) )
+            {
+                ddPlayer *= 0.707106781187f;
+            }
+
+            real32 PlayerSpeed = 10.0f;
             if(Controller->Back.EndedDown)
             {
-                PlayerSpeed *= 3.0f;
+                PlayerSpeed = 50.0f;
             }
-            dPlayer *= PlayerSpeed;
+            ddPlayer *= PlayerSpeed;
 
-            if( (dPlayer.X != 0.0f) && (dPlayer.Y != 0.0f) )
-            {
-                dPlayer *= 0.707106781187f;
-            }
+            ddPlayer += -1.5f*GameState->dPlayerP;
 
             tile_map_position TestPlayerBase = GameState->PlayerPosition;
-            TestPlayerBase.TileOffset += Input->dtForFrame * dPlayer;
+            TestPlayerBase.TileOffset = (0.5f * ddPlayer * Square(Input->dtForFrame) + // Integrate acceleration with time for change in velocity
+                                          GameState->dPlayerP * Input->dtForFrame + // Initial velocity
+                                          TestPlayerBase.TileOffset);               // And offset the current position
+
+            GameState->dPlayerP = ddPlayer * Input->dtForFrame + GameState->dPlayerP; // Store player's new velocity as the current velocity
+                                                                                    //      for next frame.
             TestPlayerBase = GetCanonicalPosition(TileMapPointer, TestPlayerBase);
 
             tile_map_position TestPlayerLeft = TestPlayerBase;
@@ -856,22 +908,21 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Draw tiles
         TileMapPointer->TileSideInPixels = 10;
         real32 MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
-        real32 ScreenCenterY = (real32)Buffer->Height * 0.5f;
-        real32 ScreenCenterX = (real32)Buffer->Width * 0.5f;
+        vector2 Origin = {((real32)Buffer->Width * 0.5f), ((real32)Buffer->Height * 0.5f)};
 
-        for(int RelRow = -40;
-            RelRow < 40;
-            ++RelRow)
+        for(int TileY = -40;
+            TileY < 40;
+            ++TileY)
         {
-            for(int RelCol = -80;
-                RelCol < 80;
-                ++RelCol)
+            for(int TileX = -80;
+                TileX < 80;
+                ++TileX)
             {
                 tile_map_position *PlayerPosition = &GameState->PlayerPosition;
 
-                // Get tiles starting from the top left relative to the player
-                u32 TileToDrawY = PlayerPosition->AbsTileY - RelRow;
-                u32 TileToDrawX = PlayerPosition->AbsTileX + RelCol;
+                // Get tiles starting from the bottom-left relative to the player's position in tile map memory
+                u32 TileToDrawX = PlayerPosition->AbsTileX + TileX;
+                u32 TileToDrawY = PlayerPosition->AbsTileY - TileY;
                 tile_value TileValue = GetTileValue(&GameState->WorldArena,
                                                     TileMapPointer,
                                                     TileToDrawY,
@@ -895,20 +946,51 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         TileB = 0.25f;
                     }
 
+                    // vector2 TileCenter = { (Origin.X + (TileX * TileMapPointer->TileSideInPixels)),
+                    //                        (Origin.Y + (TileY * TileMapPointer->TileSideInPixels)) };
+                    // vector2 ScrolledTile = { (TileCenter.X - (PlayerPosition->TileOffset.X * MetersToPixels)),
+                    //                          (TileCenter.Y + (PlayerPosition->TileOffset.Y * MetersToPixels)) };
+                    // vector2 TileMin = ScrolledTile - (vector2){ (real32)(TileMapPointer->TileSideInPixels * 0.5f),
+                    //                                             (real32)(TileMapPointer->TileSideInPixels * 0.5f) };
+                    // vector2 TileMax = TileMin +      (vector2){ (real32)(TileMapPointer->TileSideInPixels),
+                    //                                             (real32)(TileMapPointer->TileSideInPixels) };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                     // When we render in bird's-eye, player is always drawn at the center of the screen; they do not move
                     //      in screen space.
                     //
                     //      If the player "moves" upward, the distance between the player and a given tile above them is 
                     //          decreased. The given tile must be rendered closer to the center of the screen.
                     //
-                    //
-                    
-                    real32 TileCenterXInScreenCoords = ScreenCenterX +
-                                                        (RelCol * TileMapPointer->TileSideInPixels) -
-                                                        (PlayerPosition->TileOffset.X * MetersToPixels);
-                    real32 TileCenterYInScreenCoords = ScreenCenterY +
-                                                        (RelRow * TileMapPointer->TileSideInPixels) +
-                                                        (PlayerPosition->TileOffset.Y * MetersToPixels);
+
+
+                    real32 TileCenterXInScreenCoords = Origin.X;
+                    TileCenterXInScreenCoords += (TileX * TileMapPointer->TileSideInPixels);  
+                    TileCenterXInScreenCoords -= (PlayerPosition->TileOffset.X * MetersToPixels);
+
+                    real32 TileCenterYInScreenCoords = Origin.Y;
+                    TileCenterYInScreenCoords += (TileY * TileMapPointer->TileSideInPixels);
+                    TileCenterYInScreenCoords += (PlayerPosition->TileOffset.Y * MetersToPixels);
 
                     vector2 TileCenterInScreenCoords = {TileCenterXInScreenCoords, TileCenterYInScreenCoords};
                     vector2 HalfTileWidthHeight = {TileMapPointer->TileSideInPixels * 0.5f,
@@ -917,7 +999,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     vector2 TileMax = TileCenterInScreenCoords + HalfTileWidthHeight;
 
                     DrawTileWithOutline(Buffer,
-                                        Min, Max,
+                                        TileMin, TileMax,
                                         TileR, TileG, TileB);
                 }
             }
@@ -925,9 +1007,9 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         // Draw player
         tile_map_position *PlayerPosition = &GameState->PlayerPosition;
-        real32 PlayerScreenCoordMinY = ScreenCenterY - (PLAYER_HEIGHT * MetersToPixels);
+        real32 PlayerScreenCoordMinY = Origin.Y - (PLAYER_HEIGHT * MetersToPixels);
         real32 PlayerScreenCoordMaxY = PlayerScreenCoordMinY + (PLAYER_HEIGHT * MetersToPixels); // this is just ScreenCenterY
-        real32 PlayerScreenCoordMinX = ScreenCenterX - (PLAYER_WIDTH * 0.5f * MetersToPixels);
+        real32 PlayerScreenCoordMinX = Origin.X - (PLAYER_WIDTH * 0.5f * MetersToPixels);
         real32 PlayerScreenCoordMaxX = PlayerScreenCoordMinX + (PLAYER_WIDTH * MetersToPixels);
         DrawRectangle(Buffer,
                       PlayerScreenCoordMinY, PlayerScreenCoordMaxY,
@@ -940,11 +1022,10 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         real32 MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
         
         // draw tiles
-        real32 ScreenCoordZeroY = Buffer->Height;
-        real32 ScreenCoordZeroX = -((real32)TileMapPointer->TileSideInPixels * 0.5f);
+        vector2 Origin = {-((real32)TileMapPointer->TileSideInPixels * 0.5f), (real32)Buffer->Height};
         room_position PlayerRoom = GetRoomCoordsFromAbsTiles(TileMapPointer, 
-                                                                GameState->PlayerPosition.AbsTileY,
-                                                                GameState->PlayerPosition.AbsTileX);
+                                                             GameState->PlayerPosition.AbsTileY,
+                                                             GameState->PlayerPosition.AbsTileX);
         for(u32 RelRow = 0;
             RelRow < TileMapPointer->TilesPerRoomY;
             ++RelRow)
@@ -974,24 +1055,17 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 }
                 
                 // Max is furthest from left and furthest from top of screen
-                vector2 TileMax = { (ScreenCoordZeroX + (RelCol * TileMapPointer->TileSideInPixels) + TileMapPointer->TileSideInPixels),
-                                    (ScreenCoordZeroY - (RelRow * TileMapPointer->TileSideInPixels)) };
+                vector2 TileMax = { (Origin.X + (RelCol * TileMapPointer->TileSideInPixels) + TileMapPointer->TileSideInPixels),
+                                    (Origin.Y - (RelRow * TileMapPointer->TileSideInPixels)) };
                 vector2 TileWidthHeight = {(real32)TileMapPointer->TileSideInPixels, (real32)TileMapPointer->TileSideInPixels};
                 vector2 TileMin = TileMax - TileWidthHeight;
-
-                // real32 TileBottom = ScreenCoordZeroY - (RelRow * TileMapPointer->TileSideInPixels);
-                // real32 TileTop = TileBottom - TileMapPointer->TileSideInPixels;
-                // real32 TileLeft = ScreenCoordZeroX + (RelCol * TileMapPointer->TileSideInPixels);
-                // real32 TileRight = TileLeft + TileMapPointer->TileSideInPixels;
-                DrawTileWithOutline(Buffer,
-                                    TileMin, TileMax,
-                                    TileR, TileG, TileB);
+                DrawTileWithOutline(Buffer, TileMin, TileMax, TileR, TileG, TileB);
             }
 
         }
 
         // Draw player
-        real32 PlayerBottom = ScreenCoordZeroY - 
+        real32 PlayerBottom = Origin.Y - 
                                 (PlayerRoom.TileInRoomY * TileMapPointer->TileSideInPixels) - 
                                 ( 
                                  ( (TileMapPointer->TileSideInMeters / 2) + GameState->PlayerPosition.TileOffset.Y ) * 
@@ -999,7 +1073,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                 );
         real32 PlayerTop    = PlayerBottom - 
                                 (PLAYER_HEIGHT * MetersToPixels);
-        real32 PlayerLeft   = ScreenCoordZeroX +
+        real32 PlayerLeft   = Origin.X +
                                 (
                                     (PlayerRoom.TileInRoomX * TileMapPointer->TileSideInPixels) +
                                     (
@@ -1012,7 +1086,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                     )  
                                 );
         real32 PlayerRight  = PlayerLeft +
-                                (PLAYER_WIDTH * MetersToPixels);
+            (PLAYER_WIDTH * MetersToPixels);
         DrawRectangle(Buffer,
                       PlayerTop, PlayerBottom,
                       PlayerLeft, PlayerRight,

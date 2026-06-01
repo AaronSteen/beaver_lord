@@ -32,6 +32,17 @@ operator*(real32 Scalar, vector2 Vector)
     return(Result);
 }
 
+vector2 
+operator*(vector2 Vector, real32 Scalar)
+{
+    vector2 Result;
+
+    Result.X = Vector.X * Scalar;
+    Result.Y = Vector.Y * Scalar;
+
+    return(Result);
+}
+
 vector2 &
 operator*=(vector2 &Vector, real32 Scalar)
 {
@@ -77,6 +88,14 @@ operator-(vector2 A, vector2 B)
 
     Result.X = A.X - B.X;
     Result.Y = A.Y - B.Y;
+
+    return(Result);
+}
+
+real32
+Square(real32 A)
+{
+    real32 Result = A*A;
 
     return(Result);
 }

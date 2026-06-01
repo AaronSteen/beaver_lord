@@ -110,9 +110,12 @@ struct world
 
 struct game_state
 {
-    tile_map_position PlayerPosition;
     memory_arena WorldArena;
     world *WorldPointer;
+
+    tile_map_position PlayerPosition;
+    vector2 dPlayerP;
+
     bool32 BirdsEye;
     u32 RandomSeed;
 };
