@@ -70,11 +70,24 @@ struct tile_map_position
     vector2 TileOffset;
 };
 
+struct room_position
+{
+    u32 RoomY;
+    u32 RoomX;
+    u32 TileInRoomY;
+    u32 TileInRoomX;
+};
+
+struct tile_screen_coordinates
+{
+    vector2 Min;
+    vector2 Max;
+};
+
 struct tile_chunk
 {
     u32 *TilesArray;
 };
-
 
 struct tile_map
 {
@@ -95,14 +108,6 @@ struct tile_map
     tile_chunk *TileChunksArray;
 };
 
-struct room_position
-{
-    u32 RoomY;
-    u32 RoomX;
-    u32 TileInRoomY;
-    u32 TileInRoomX;
-};
-
 struct world
 {
     tile_map *TileMapPointer;
@@ -119,7 +124,6 @@ struct game_state
     bool32 BirdsEye;
     u32 RandomSeed;
 };
-
 
 #define BEAVER_H
 #endif
