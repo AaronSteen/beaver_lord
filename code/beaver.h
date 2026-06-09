@@ -113,6 +113,42 @@ struct world
     tile_map *TileMapPointer;
 };
 
+#pragma pack(push, 1)
+struct bitmap_header
+{
+    char Signature[2];
+    u32 FileSize;
+    u8 Reserved[4];
+    u32 DataOffset;
+    u32 Size;
+    u32 Width;
+    s32 Height;
+    u16 Planes;
+    u16 BitsPerPixel;
+    u32 Compression;
+    u32 CompressedImageSize;
+    u32 XPixelsPerMeter;
+    u32 YPixelsPerMeter;
+    u32 ColorsUsed;
+    u32 ImportantColors;
+    u32 RedMask;
+    u32 GreenMask;
+    u32 BlueMask;
+};
+#pragma pack(pop)
+
+struct bitmap
+{
+    u32 Size;
+    u32 Width;
+    s32 Height;
+    u32 AlphaMask;
+    u32 RedMask;
+    u32 GreenMask;
+    u32 BlueMask;
+    u8 *Pixels;
+};
+
 struct game_state
 {
     memory_arena WorldArena;
@@ -123,6 +159,8 @@ struct game_state
 
     bool32 BirdsEye;
     u32 RandomSeed;
+
+    bitmap Tree;
 };
 
 #define BEAVER_H
