@@ -112,7 +112,7 @@ DrawTileWithOutline(game_offscreen_buffer *Buffer,
                     vector2 Min, vector2 Max,
                     real32 R, real32 G, real32 B)
 {
-    s32 MinX = RoundReal32ToS32(Min.X);
+s32 MinX = RoundReal32ToS32(Min.X);
     s32 MinY = RoundReal32ToS32(Min.Y);
     s32 MaxX = RoundReal32ToS32(Max.X);
     s32 MaxY = RoundReal32ToS32(Max.Y);
@@ -166,6 +166,145 @@ DrawTileWithOutline(game_offscreen_buffer *Buffer,
 
 }
 
+void
+BlitBitmap(game_offscreen_buffer *Buffer, vector2 Min, vector2 Max, bitmap *Bitmap)
+{
+    s32 ScreenMinX = RoundReal32ToS32(Min.X);
+    s32 ScreenMinY = RoundReal32ToS32(Min.Y);
+    s32 ScreenMaxX = RoundReal32ToS32(Max.X);
+    s32 ScreenMaxY = RoundReal32ToS32(Max.Y);
+    
+    u32 BitmapMinX = 0;
+    u32 BitmapMinY = 0;
+    u32 BitmapMaxX = Bitmap->Width;
+    u32 BitmapMaxY = Bitmap->Height;
+
+    if(ScreenMinX < 0)
+    {
+        u32 PixelsToMoveRight = abs(ScreenMinX);
+        ScreenMinX += PixelsToMoveRight;
+        BitmapMinX += PixelsToMoveRight;
+    }
+    if(ScreenMinY < 0)
+    {
+        u32 PixelsToMoveDown = abs(ScreenMinY);
+        ScreenMinY += PixelsToMoveDown;
+        BitmapMaxY -= PixelsToMoveDown;
+    }
+    if(ScreenMaxX > Buffer->Width)
+    {
+        u32 PixelsToMoveLeft = ScreenMaxX - Buffer->Width;
+        ScreenMaxX -= PixelsToMoveLeft;
+        BitmapMaxX -= PixelsToMoveLeft;
+    }
+    if(ScreenMaxY > Buffer->Height)
+    {
+        u32 PixelsToMoveUp = ScreenMaxY - Buffer->Height;
+        ScreenMaxY -= PixelsToMoveUp;
+        BitmapMinY += PixelsToMoveUp;
+    }
+
+    u32 *ScreenRow = (u32 *)Buffer->Memory + (ScreenMinY * Buffer->Width) + ScreenMinX;
+    u32 *BitmapRow = (u32 *)Bitmap->Pixels + (BitmapMaxY * Bitmap->Width) + BitmapMinX;
+    for(int Y = ScreenMinY;
+        Y < ScreenMaxY;
+        ++Y)
+    {
+        u32 *Dest = ScreenRow;
+        u32 *Source = BitmapRow;
+        for(int X = ScreenMinX;
+            X < ScreenMaxX;
+            ++X)
+        {
+            *Dest++ = *Source++;
+        }
+        ScreenRow += Buffer->Width;
+        BitmapRow -= Bitmap->Width;
+    }
+}
+
+u32
+Lerp(u32 A, u32 B, real32 T)
+{
+    u32 ToReturn = A * (1 - T) + (T * B);
+    return(ToReturn);
+}
+
+void
+BlitBitmapAndBlend(game_offscreen_buffer *Buffer, vector2 Min, vector2 Max, bitmap *Bitmap)
+{
+    s32 ScreenMinX = RoundReal32ToS32(Min.X);
+    s32 ScreenMinY = RoundReal32ToS32(Min.Y);
+    s32 ScreenMaxX = RoundReal32ToS32(Max.X);
+    s32 ScreenMaxY = RoundReal32ToS32(Max.Y);
+
+    u32 BitmapMinX = 0;
+    u32 BitmapMinY = 0;
+    u32 BitmapMaxX = Bitmap->Width;
+    u32 BitmapMaxY = Bitmap->Height;
+
+    if(ScreenMinX < 0)
+    {
+        u32 PixelsToMoveRight = abs(ScreenMinX);
+        ScreenMinX += PixelsToMoveRight;
+        BitmapMinX += PixelsToMoveRight;
+    }
+    if(ScreenMinY < 0)
+    {
+        u32 PixelsToMoveDown = abs(ScreenMinY);
+        ScreenMinY += PixelsToMoveDown;
+        BitmapMaxY -= PixelsToMoveDown;
+    }
+    if(ScreenMaxX > Buffer->Width)
+    {
+        u32 PixelsToMoveLeft = ScreenMaxX - Buffer->Width;
+        ScreenMaxX -= PixelsToMoveLeft;
+        BitmapMaxX -= PixelsToMoveLeft;
+    }
+    if(ScreenMaxY > Buffer->Height)
+    {
+        u32 PixelsToMoveUp = ScreenMaxY - Buffer->Height;
+        ScreenMaxY -= PixelsToMoveUp;
+        BitmapMinY += PixelsToMoveUp;
+    }
+
+    u32 *ScreenRow = (u32 *)Buffer->Memory + (ScreenMinY * Buffer->Width) + ScreenMinX;
+    u32 *BitmapRow = (u32 *)Bitmap->Pixels + (BitmapMaxY * Bitmap->Width) + BitmapMinX;
+    for(int Y = ScreenMinY;
+        Y < ScreenMaxY;
+        ++Y)
+    {
+        u32 *Dest = ScreenRow;
+        u32 *Source = BitmapRow;
+        for(int X = ScreenMinX;
+            X < ScreenMaxX;
+            ++X)
+        {
+            u32 SourceAlpha = *((u8 *)Source + 3);
+            u32 SourceRed = *((u8 *)Source + 2);
+            u32 SourceGreen = *((u8 *)Source + 1);
+            u32 SourceBlue = *((u8 *)Source + 0);
+
+            u32 DestRed = *((u8 *)Dest + 2);
+            u32 DestGreen = *((u8 *)Dest + 1);
+            u32 DestBlue = *((u8 *)Dest + 0);
+
+            real32 RealAlpha = (real32)SourceAlpha / 255.0f;
+
+            u32 LerpRed = Lerp(DestRed, SourceRed, RealAlpha);
+            u32 LerpGreen = Lerp(DestGreen, SourceGreen, RealAlpha);
+            u32 LerpBlue = Lerp(DestBlue, SourceBlue, RealAlpha);
+
+            u32 Color = ((LerpRed << 16) | (LerpGreen << 8) | (LerpBlue << 0));
+
+            *Dest = Color;
+            ++Dest;
+            ++Source;
+        }
+        ScreenRow += Buffer->Width;
+        BitmapRow -= Bitmap->Width;
+    }
+}
 
 bitmap
 DEBUGLoadBitmap(thread_context *Thread, debug_platform_read_entire_file *ReadEntireFile, char *Filename)
@@ -676,13 +815,6 @@ GetScreenCoordinatesForRelTile(vector2 Origin, s32 RelTileX, s32 RelTileY, real3
     return(Result);
 }
 
-u32
-Lerp(u32 A, u32 B, real32 T)
-{
-    u32 ToReturn = A * (1 - T) + (T * B);
-    return(ToReturn);
-}
-
 #if defined __cplusplus
 extern "C"
 #endif
@@ -697,6 +829,9 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(!Memory->IsInitialized)
     {
         GameState->Tree = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "tree.bmp");
+        GameState->TreeSmall = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "tree_small.bmp");
+        GameState->Water = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "water.bmp");
+        GameState->WaterSmall = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "water_small.bmp");
 
         GameState->RandomSeed = Memory->RandomSeed;
         GameState->BirdsEye = false;
@@ -928,42 +1063,35 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                     TileToDrawX);
                 if(TileValue != TILE_INVALID)
                 {
-                    real32 TileR = WATER_R;
-                    real32 TileG = WATER_G;
-                    real32 TileB = WATER_B;
-                    if(TileValue == TILE_BLOCK)
-                    {
-                        TileR = BLOCK_R;
-                        TileG = BLOCK_G;
-                        TileB = BLOCK_B;
-                    }
-                    if( (PlayerPosition->AbsTileY == TileToDrawY) &&
-                        (PlayerPosition->AbsTileX == TileToDrawX) )
-                    {
-                        TileR = 0.25f;
-                        TileG = 0.25f;
-                        TileB = 0.25f;
-                    }
+                    tile_screen_coordinates TileScreenCoords = GetScreenCoordinatesForRelTile(Origin, 
+                                                                                              RelTileX, RelTileY, 
+                                                                                              TileMapPointer->TileSideInPixels);
 
                     // When we render in bird's-eye, player is always drawn at the center of the screen; they do not move
                     //      in screen space.
                     //
                     //      If the player "moves" upward, the distance between the player and a given tile above them is 
                     //          decreased. The given tile must be rendered closer to the center of the screen.
-                    
-
-                    tile_screen_coordinates TileScreenCoords = GetScreenCoordinatesForRelTile(Origin, 
-                                                                                          RelTileX, RelTileY, 
-                                                                                          TileMapPointer->TileSideInPixels);
 
                     TileScreenCoords.Min.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
                     TileScreenCoords.Max.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
                     TileScreenCoords.Min.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
                     TileScreenCoords.Max.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
-                    
-                    DrawRectangle(Buffer,
-                                  TileScreenCoords.Min, TileScreenCoords.Max,
-                                  TileR, TileG, TileB);
+                    if( (PlayerPosition->AbsTileY == TileToDrawY) && (PlayerPosition->AbsTileX == TileToDrawX) )
+                    {
+                        real32 TileR = 0.25f;
+                        real32 TileG = 0.25f;
+                        real32 TileB = 0.25f;
+                        DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, TileR, TileG, TileB);
+                    }
+                    else
+                    {
+                        BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->WaterSmall);
+                        if(TileValue == TILE_BLOCK)
+                        {
+                            BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->TreeSmall);
+                        }
+                    }
                 }
             }
         }
@@ -1013,10 +1141,14 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 }
                 else
                 {
-                    
-                    DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, WATER_R, WATER_G, WATER_B);
+                    // Draw water
+                    BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->Water);
+
+                    // DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, WATER_R, WATER_G, WATER_B);
                     if(TileValue == TILE_BLOCK)
                     {
+                        BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->Tree);
+#if 0
                         for(int RowInTile = 0;
                             RowInTile < TileMapPointer->TileSideInPixels;
                             ++RowInTile)
@@ -1040,11 +1172,6 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                 ((u32)ScreenCoordinateForThisPixel.Y * Buffer->Width) + 
                                                 ((u32)ScreenCoordinateForThisPixel.X);
 
-                                    // Color channels are stored in memory in this order: BB GG RR AA.
-                                    //      When the 4 channels are interpreted as a four-byte aggregate,
-                                    //      the machine reads them from right to left, since all architectures
-                                    //      are little-endian now. 
-
                                     u32 SourceAlpha = *((u8 *)SrcPixelToCopy + 3);
                                     u32 SourceRed = *((u8 *)SrcPixelToCopy + 2);
                                     u32 SourceGreen = *((u8 *)SrcPixelToCopy + 1);
@@ -1065,6 +1192,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                 }
                             }
                         }
+#endif
                     }
                 }
             }

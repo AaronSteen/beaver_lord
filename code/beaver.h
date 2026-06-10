@@ -161,6 +161,9 @@ struct game_state
     u32 RandomSeed;
 
     bitmap Tree;
+    bitmap TreeSmall;
+    bitmap Water;
+    bitmap WaterSmall;
 };
 
 #define BEAVER_H
