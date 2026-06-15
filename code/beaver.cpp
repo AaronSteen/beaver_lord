@@ -1022,9 +1022,50 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TestPlayerRight.TileOffset.X += (PLAYER_WIDTH * 0.5f);
             TestPlayerRight = GetCanonicalPosition(TileMapPointer, TestPlayerRight);
 
-            if(IsTileAccessible(&GameState->WorldArena, TileMapPointer, TestPlayerBase.AbsTileY, TestPlayerBase.AbsTileX) &&
-               IsTileAccessible(&GameState->WorldArena, TileMapPointer, TestPlayerLeft.AbsTileY, TestPlayerLeft.AbsTileX) &&
-               IsTileAccessible(&GameState->WorldArena, TileMapPointer, TestPlayerRight.AbsTileY, TestPlayerRight.AbsTileX))
+            bool32 Collided = false;
+            tile_map_position CollisionPoint;
+            if(!IsTileAccessible(&GameState->WorldArena, TileMapPointer, 
+                                 TestPlayerBase.AbsTileY, TestPlayerBase.AbsTileX))
+            {
+                Collided = true;
+                CollisionPoint = TestPlayerBase;
+            }
+            if(!IsTileAccessible(&GameState->WorldArena, TileMapPointer, 
+                                 TestPlayerLeft.AbsTileY, TestPlayerLeft.AbsTileX))
+            {
+                Collided = true;
+                CollisionPoint = TestPlayerLeft;
+            }
+            if(!IsTileAccessible(&GameState->WorldArena, TileMapPointer, 
+                                 TestPlayerRight.AbsTileY, TestPlayerRight.AbsTileX))
+            {
+                Collided = true;
+                CollisionPoint = TestPlayerRight;
+            }
+            if(Collided)
+            {
+                vector2 NormalFromWall;
+                if(CollisionPoint.AbsTileX < GameState->PlayerPosition.AbsTileX)
+                {
+                    NormalFromWall = {-1, 0};
+                }
+                if(CollisionPoint.AbsTileX > GameState->PlayerPosition.AbsTileX)
+                {
+                    NormalFromWall = {1, 0};
+                }
+                if(CollisionPoint.AbsTileY < GameState->PlayerPosition.AbsTileY)
+                {
+                    NormalFromWall = {0, 1};
+                }
+                if(CollisionPoint.AbsTileY > GameState->PlayerPosition.AbsTileY)
+                {
+                    NormalFromWall = {0, -1};
+                }
+                GameState->dPlayerP = GameState->dPlayerP - 
+                    Inner(GameState->dPlayerP, NormalFromWall) * 
+                    NormalFromWall;
+            }
+            else
             {
                 GameState->PlayerPosition = TestPlayerBase;
             }
@@ -1037,12 +1078,33 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     DrawRectangle(Buffer,
                   ScreenMin, ScreenMax,
                   0.75f, 0.25f, 0.5f);
+
+    // Note that for all rendering, we take Y to be a "bottom-up" value. 
+    //      e.g., the row of tiles at the extreme south of the tilemap has a Y value of zero.
+    //  However, we get a buffer of pixels to draw into that positions the row with a Y value of
+    //      zero at the TOP of the screen. i.e., the top-left pixel on the screen has address zero.
+    //  So when we go to compute a screen coordinate, we compute an origin (either the center
+    //      of the screen or the bottom-left), and then Y values are SUBTRACTED from the origin.
+    //  Whereas X values are added to the origin.
+    //  e.g., If a tile has a row value of, say, 3, relative to the bottom of the tilemap,
+    //      and we say that we have 10 total rows of tiles, that tile's row in
+    //      terms of screen coordinates would be 10 - 3 = 7.
+    //
     if(GameState->BirdsEye == true)
     {
         // Draw tiles
         TileMapPointer->TileSideInPixels = 16;
         real32 MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
         vector2 Origin = {((real32)Buffer->Width * 0.5f), ((real32)Buffer->Height * 0.5f)};
+
+        // How the tiles are rendered when in birdseye view:
+        //      Unlike room view (rendering loop below), we draw the player at the center of the screen and never move them.
+        //      Instead of the player moving relative to the tilemap, we scroll the tilemap beneath the player.
+        //      Therefore, the tile the player is on is drawn at the very center of the screen. 
+        //      RelTile Y and X (below) mean "The tiles relative to the center of the screen." e.g.,
+        //      RelTile Y = -1, RelTileY = 3 means the tile that is:
+        //          In the row below the player's current row
+        //          Three columns to the right of the player's current column.
 
         for(int RelTileY = -40;
             RelTileY < 40;
@@ -1063,33 +1125,65 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                     TileToDrawX);
                 if(TileValue != TILE_INVALID)
                 {
-                    tile_screen_coordinates TileScreenCoords = GetScreenCoordinatesForRelTile(Origin, 
-                                                                                              RelTileX, RelTileY, 
-                                                                                              TileMapPointer->TileSideInPixels);
 
-                    // When we render in bird's-eye, player is always drawn at the center of the screen; they do not move
-                    //      in screen space.
+                    // Here we determine where to render the tile whose value we just looked up in memory.
+                    // Remember: The player's tile is always the one at the center of the screen. So RelTileY = 0, RelTileX = 0
+                    //      means the tile that the player is on, and this tile should be drawn at the center of the screen.
+                    //      Since we currently render at 1024 by 768, this means an X value of 1024 / 2 = 512 and 
+                    //          a Y value of 768 / 2 = 384.
+                    //      And since we want that tile to be centered on the screen, we want the center of the tile to be at
+                    //          the center of the screen. So for the middle tile, this calculation
                     //
-                    //      If the player "moves" upward, the distance between the player and a given tile above them is 
-                    //          decreased. The given tile must be rendered closer to the center of the screen.
+                    //          TileMin.X = Origin.X - (TileMapPointer->TileSideInPixels * 0.5f) + (TileMapPointer->TileSideInPixels * RelTileX);
+                    //          would be
+                    //          Left edge of tile = 512 - 8 + (16 * 0) = 504
+                    //
+                    //
+                    //          For the tile just to the left of the player, it would be
+                    //          Left edge of tile = 512 - 8 + (16 * -1) = 512 - 8 - 16 = 488
+                    //
+                    //          etc.
 
-                    TileScreenCoords.Min.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
-                    TileScreenCoords.Max.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
-                    TileScreenCoords.Min.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
-                    TileScreenCoords.Max.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
+                    vector2 TileMin;
+                    TileMin.X = Origin.X - (TileMapPointer->TileSideInPixels * 0.5f) + (TileMapPointer->TileSideInPixels * RelTileX);
+                    TileMin.Y = Origin.Y - (TileMapPointer->TileSideInPixels * 0.5f) - (TileMapPointer->TileSideInPixels * RelTileY);
+                    vector2 TileMax;
+                    TileMax.X = TileMin.X + (TileMapPointer->TileSideInPixels);
+                    TileMax.Y = TileMin.Y + (TileMapPointer->TileSideInPixels);
+
+                    // To scroll the screen, we then OFFSET that tile position by how far the player has moved relative to the
+                    //      center of the tile they're currently on. e.g., if the player's tile offset is X = 0.3, Y = -0.6,
+                    //      (relative to the center of the tile), their location is 0.3 meters to the right of the tile's center,
+                    //      and -0.6 meters below the tile's center.
+                    //
+                    //  If we were moving the player instead of scrolling the tile map, we would just add those offsets to 
+                    //      the position at which we are rendering them. But since we are keeping them stationary
+                    //      and scrolling the tilemap instead, we need to move the TILE's rendering position by that
+                    //      same amount, but in reverse. e.g., if a player was going to move to the right in a tile by
+                    //      a half of a meter, we could either add half a meter to their position, or bring that
+                    //      point that is a half-meter away TO THE PLAYER, instead, by moving the tile's position
+                    //      by half a meter, TOWARD THE PLAYER.
+                    //
+                    //      Hence below the OffsetX values are subtracted from the tile's position -- we're moving
+                    //      the tile TOWARD the player.
+
+                    TileMin.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
+                    TileMax.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
+                    TileMin.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
+                    TileMax.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
                     if( (PlayerPosition->AbsTileY == TileToDrawY) && (PlayerPosition->AbsTileX == TileToDrawX) )
                     {
                         real32 TileR = 0.25f;
                         real32 TileG = 0.25f;
                         real32 TileB = 0.25f;
-                        DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, TileR, TileG, TileB);
+                        DrawRectangle(Buffer, TileMin, TileMax, TileR, TileG, TileB);
                     }
                     else
                     {
-                        BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->WaterSmall);
+                        BlitBitmap(Buffer, TileMin, TileMax, &GameState->WaterSmall);
                         if(TileValue == TILE_BLOCK)
                         {
-                            BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->TreeSmall);
+                            BlitBitmapAndBlend(Buffer, TileMin, TileMax, &GameState->TreeSmall);
                         }
                     }
                 }
@@ -1097,7 +1191,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
 
         // Draw player
-        real32 PlayerScreenCoordMinY = Origin.Y - (PLAYER_HEIGHT * MetersToPixels);
+        real32 PlayerScreenCoordMinY = Origin.Y - (PLAYER_HEIGHT * 0.5f * MetersToPixels);
         real32 PlayerScreenCoordMaxY = PlayerScreenCoordMinY + (PLAYER_HEIGHT * MetersToPixels);
         real32 PlayerScreenCoordMinX = Origin.X - (PLAYER_WIDTH * 0.5f * MetersToPixels);
         real32 PlayerScreenCoordMaxX = PlayerScreenCoordMinX + (PLAYER_WIDTH * MetersToPixels);
@@ -1207,7 +1301,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 
         PlayerScreenCoords.Min.X += (
-                                     (TileMapPointer->TileSideInMeters * 0.5f) +
+                                     (TileMapPointer->TileSideInMeters * 0.5f) +  
                                      (GameState->PlayerPosition.TileOffset.X) -
                                      (PLAYER_WIDTH * 0.5f)
                                     ) * MetersToPixels;

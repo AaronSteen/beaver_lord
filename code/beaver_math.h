@@ -100,5 +100,13 @@ Square(real32 A)
     return(Result);
 }
 
+real32
+Inner(vector2 A, vector2 B)
+{
+    real32 Result = (A.X * B.X) + (A.Y * B.Y);
+
+    return(Result);
+}
+
 #define BEAVER_MATH_H
 #endif
