@@ -9,7 +9,7 @@
 
 #define METERS_TO_PIXELS (TILE_SIDE_PIXELS / TILE_SIDE_METERS)
 #define PLAYER_HEIGHT TILE_SIDE_METERS
-#define PLAYER_WIDTH (TILE_SIDE_METERS * 0.75f)
+#define PLAYER_WIDTH TILE_SIDE_METERS
 
 #define TILES_IN_WORLD_Y (TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY)
 #define TILES_IN_WORLD_X (TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX)
@@ -832,6 +832,10 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->TreeSmall = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "tree_small.bmp");
         GameState->Water = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "water.bmp");
         GameState->WaterSmall = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "water_small.bmp");
+        GameState->BeaverRight = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "beaver_right.bmp");
+        GameState->BeaverUp = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "beaver_up.bmp");
+        GameState->BeaverLeft = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "beaver_left.bmp");
+        GameState->BeaverDown = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "beaver_down.bmp");
 
         GameState->RandomSeed = Memory->RandomSeed;
         GameState->BirdsEye = false;
@@ -950,6 +954,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffset.Y = 0.6f;
         GameState->PlayerPosition.TileOffset.X = -0.4f;
+        GameState->PlayerFacing = FACING_RIGHT;
 
         Memory->IsInitialized = true;
     }
@@ -977,18 +982,22 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if(Controller->MoveRight.EndedDown)
             {
                 ddPlayer.X += 1.0f;
+                GameState->PlayerFacing = FACING_RIGHT;
             }
             if(Controller->MoveUp.EndedDown)
             {
                 ddPlayer.Y += 1.0f;
+                GameState->PlayerFacing = FACING_UP;
             }
             if(Controller->MoveLeft.EndedDown)
             {
                 ddPlayer.X -= 1.0f;
+                GameState->PlayerFacing = FACING_LEFT;
             }
             if(Controller->MoveDown.EndedDown)
             {
                 ddPlayer.Y -= 1.0f;
+                GameState->PlayerFacing = FACING_DOWN;
             }
 
             if( (ddPlayer.X != 0.0f) && (ddPlayer.Y != 0.0f) )
@@ -1197,9 +1206,6 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         real32 PlayerScreenCoordMaxX = PlayerScreenCoordMinX + (PLAYER_WIDTH * MetersToPixels);
         vector2 PlayerMin = {PlayerScreenCoordMinX, PlayerScreenCoordMinY};
         vector2 PlayerMax = {PlayerScreenCoordMaxX, PlayerScreenCoordMaxY};
-        DrawRectangle(Buffer,
-                      PlayerMin, PlayerMax,
-                      PLAYER_R, PLAYER_G, PLAYER_B);
     }
     else
     {
@@ -1298,23 +1304,48 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         tile_screen_coordinates PlayerScreenCoords = GetScreenCoordinatesForRelTile(Origin,
                                                                                     PlayerTileX, PlayerTileY,
                                                                                     TileMapPointer->TileSideInPixels);
-
-
         PlayerScreenCoords.Min.X += (
                                      (TileMapPointer->TileSideInMeters * 0.5f) +  
                                      (GameState->PlayerPosition.TileOffset.X) -
                                      (PLAYER_WIDTH * 0.5f)
                                     ) * MetersToPixels;
         PlayerScreenCoords.Max.X = PlayerScreenCoords.Min.X + (PLAYER_WIDTH * MetersToPixels);
-        
+
         PlayerScreenCoords.Max.Y -= ( (TileMapPointer->TileSideInMeters * 0.5f) + 
-                                     GameState->PlayerPosition.TileOffset.Y) * 
-                                        MetersToPixels;
+                                      GameState->PlayerPosition.TileOffset.Y) * 
+            MetersToPixels;
         PlayerScreenCoords.Min.Y = PlayerScreenCoords.Max.Y - (PLAYER_HEIGHT * MetersToPixels);
 
+        bitmap *PlayerSprite;
+        switch(GameState->PlayerFacing)
+        {
+            case(FACING_RIGHT):
+            {
+                PlayerSprite = &GameState->BeaverRight;
+            } break;
+
+            case(FACING_UP):
+            {
+                PlayerSprite = &GameState->BeaverUp;
+            } break;
+
+            case(FACING_LEFT):
+            {
+                PlayerSprite = &GameState->BeaverLeft;
+            } break;
+
+            case(FACING_DOWN):
+            {
+                PlayerSprite = &GameState->BeaverDown;
+            } break;
+        }
+        BlitBitmapAndBlend(Buffer, PlayerScreenCoords.Min, PlayerScreenCoords.Max, PlayerSprite);
+
+#if 0
         DrawRectangle(Buffer,
                       PlayerScreenCoords.Min, PlayerScreenCoords.Max,
                       PLAYER_R, PLAYER_G, PLAYER_B);
+#endif
 
     //     vector2 Min = {((real32)4 * TileMapPointer->TileSideInPixels), ((real32)4 * TileMapPointer->TileSideInPixels)};
     //     vector2 Max = {(Min.X + TileMapPointer->TileSideInPixels), (Min.Y + TileMapPointer->TileSideInPixels)};

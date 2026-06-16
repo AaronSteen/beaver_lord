@@ -47,6 +47,14 @@ enum tile_value
     TILE_BLOCK
 };
 
+enum player_facing
+{
+    FACING_RIGHT,
+    FACING_UP,
+    FACING_LEFT,
+    FACING_DOWN
+};
+
 struct memory_arena
 {
     u8 *Base;
@@ -155,6 +163,7 @@ struct game_state
     world *WorldPointer;
 
     tile_map_position PlayerPosition;
+    u32 PlayerFacing;
     vector2 dPlayerP;
 
     bool32 BirdsEye;
@@ -164,6 +173,11 @@ struct game_state
     bitmap TreeSmall;
     bitmap Water;
     bitmap WaterSmall;
+
+    bitmap BeaverRight;
+    bitmap BeaverUp;
+    bitmap BeaverLeft;
+    bitmap BeaverDown;
 };
 
 #define BEAVER_H
