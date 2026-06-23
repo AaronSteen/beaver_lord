@@ -4,12 +4,8 @@
 #define CHUNK_DIM 16
 #define CHUNK_MASK 4
 
-#define TILE_SIDE_PIXELS 60.0f
-#define TILE_SIDE_METERS 1.4f
-
-#define METERS_TO_PIXELS (TILE_SIDE_PIXELS / TILE_SIDE_METERS)
-#define PLAYER_HEIGHT TILE_SIDE_METERS
-#define PLAYER_WIDTH TILE_SIDE_METERS
+#define PLAYER_HEIGHT 1.05f
+#define PLAYER_WIDTH 1.05f
 
 #define TILES_IN_WORLD_Y (TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY)
 #define TILES_IN_WORLD_X (TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX)
@@ -803,6 +799,33 @@ MakePathOfNRooms(memory_arena *WorldArenaPointer, u32 *RandomSeedPointer, tile_m
 }
 
 tile_screen_coordinates
+GetScreenCoordinatesForRoomView(vector2 Origin, s32 RelTileX, s32 RelTileY, real32 TileSideInPixels)
+{
+    tile_screen_coordinates Result;
+
+    Result.Min.X = Origin.X + RelTileX * TileSideInPixels;
+    Result.Max.Y = Origin.Y - RelTileY * TileSideInPixels;
+    Result.Max.X = Result.Min.X + TileSideInPixels;
+    Result.Min.Y = Result.Max.Y - TileSideInPixels;
+
+    return(Result);
+}
+
+tile_screen_coordinates
+GetScreenCoordinatesForBirdsEyeView(u32 ScreenCenterX, u32 ScreenCenterY, s32 RelTileX, s32 RelTileY, real32 TileSideInPixels)
+{
+    tile_screen_coordinates Result;
+    
+    Result.Min.X = ScreenCenterX - (TileSideInPixels * 0.5f) + (RelTileX * TileSideInPixels);
+    Result.Max.X = Result.Min.X + TileSideInPixels;
+
+    Result.Max.Y = ScreenCenterY + (TileSideInPixels * 0.5f) - (RelTileY * TileSideInPixels);
+    Result.Min.Y = Result.Max.Y - TileSideInPixels;
+
+    return(Result);
+}
+
+tile_screen_coordinates
 GetScreenCoordinatesForRelTile(vector2 Origin, s32 RelTileX, s32 RelTileY, real32 TileSideInPixels)
 {
     tile_screen_coordinates Result;
@@ -814,6 +837,91 @@ GetScreenCoordinatesForRelTile(vector2 Origin, s32 RelTileX, s32 RelTileY, real3
     
     return(Result);
 }
+
+void
+BlitBitmapWithNearestNeighborAndBlend(game_offscreen_buffer *Buffer, vector2 Min, vector2 Max, bitmap *Bitmap) 
+{
+
+    s32 ScreenMinX = RoundReal32ToS32(Min.X);
+    s32 ScreenMinY = RoundReal32ToS32(Min.Y);
+    s32 ScreenMaxX = RoundReal32ToS32(Max.X);
+    s32 ScreenMaxY = RoundReal32ToS32(Max.Y);
+
+    s32 ClippedScreenMinX = ScreenMinX;
+    s32 ClippedScreenMinY = ScreenMinY;
+    s32 ClippedScreenMaxX = ScreenMaxX;
+    s32 ClippedScreenMaxY = ScreenMaxY;
+
+    u32 BitmapMinX = 0;
+    u32 BitmapMinY = 0;
+    u32 BitmapMaxX = Bitmap->Width - 1;
+    u32 BitmapMaxY = Bitmap->Height - 1;
+
+    if(ScreenMinX < 0)
+    {
+        s32 PixelsToMoveRight = abs(ScreenMinX);
+        ClippedScreenMinX += PixelsToMoveRight;
+    }
+    if(ScreenMinY < 0)
+    {
+        s32 PixelsToMoveDown = abs(ScreenMinY);
+        ClippedScreenMinY += PixelsToMoveDown;
+    }
+    if(ScreenMaxX > Buffer->Width)
+    {
+        s32 PixelsToMoveLeft = ScreenMaxX - Buffer->Width;
+        ClippedScreenMaxX -= PixelsToMoveLeft;
+    }
+    if(ScreenMaxY > Buffer->Height)
+    {
+        s32 PixelsToMoveUp = ScreenMaxY - Buffer->Height;
+        ClippedScreenMaxY -= PixelsToMoveUp;
+    }
+
+    u32 *ScreenRow = (u32 *)Buffer->Memory + (ClippedScreenMinY * Buffer->Width) + ClippedScreenMinX;
+    for(int Y = ClippedScreenMinY;
+        Y < ClippedScreenMaxY;
+        ++Y)
+    {
+        u32 *Dest = ScreenRow;
+        real32 NormalizedYCoord = ((real32)Y - ScreenMinY) / ((real32)ScreenMaxY - ScreenMinY);
+        u32 NormalizedYCoordMappedToBitmap = BitmapMaxY - RoundReal32ToS32(((real32)BitmapMaxY * NormalizedYCoord));
+        Assert(NormalizedYCoordMappedToBitmap >= BitmapMinY);
+        Assert(NormalizedYCoordMappedToBitmap <= BitmapMaxY);
+        for(int X = ClippedScreenMinX;
+            X < ClippedScreenMaxX;
+            ++X)
+        {
+            real32 NormalizedXCoord = ((real32)X - ScreenMinX) / ((real32)ScreenMaxX - ScreenMinX);
+            u32 NormalizedXCoordMappedToBitmap = RoundReal32ToS32(((real32)BitmapMaxX * NormalizedXCoord));
+            Assert(NormalizedXCoordMappedToBitmap >= BitmapMinX);
+            Assert(NormalizedXCoordMappedToBitmap <= BitmapMaxX);
+            u32 *SourcePixel = (u32 *)Bitmap->Pixels + (NormalizedYCoordMappedToBitmap * Bitmap->Width) + NormalizedXCoordMappedToBitmap;
+        
+            u32 SourceAlpha = *((u8 *)SourcePixel + 3);
+            u32 SourceRed = *((u8 *)SourcePixel + 2);
+            u32 SourceGreen = *((u8 *)SourcePixel + 1);
+            u32 SourceBlue = *((u8 *)SourcePixel + 0);
+
+            u32 DestRed = *((u8 *)Dest + 2);
+            u32 DestGreen = *((u8 *)Dest + 1);
+            u32 DestBlue = *((u8 *)Dest + 0);
+
+            real32 RealAlpha = (real32)SourceAlpha / 255.0f;
+
+            u32 LerpRed = Lerp(DestRed, SourceRed, RealAlpha);
+            u32 LerpGreen = Lerp(DestGreen, SourceGreen, RealAlpha);
+            u32 LerpBlue = Lerp(DestBlue, SourceBlue, RealAlpha);
+
+            u32 Color = ((LerpRed << 16) | (LerpGreen << 8) | (LerpBlue << 0));
+
+            *Dest = Color;
+            ++Dest;
+        }
+        ScreenRow += Buffer->Width;
+    }
+}
+
 
 #if defined __cplusplus
 extern "C"
@@ -897,59 +1005,6 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Path off of south room
         MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 9, 10);
 
-        // Path off of west room
-
-
-        // enum door
-        // {
-        //     DOOR_EAST = 1,
-        //     DOOR_NORTH = 2,
-        //     DOOR_WEST = 3,
-        //     DOOR_SOUTH = 4
-        // };
-        // for(int DoorInStartingRoom = DOOR_EAST;
-        //     DoorInStartingRoom <= DOOR_SOUTH;
-        //     ++DoorInStartingRoom)
-        // {
-        //     u32 RoomY = CenterRoomYCoord;
-        //     u32 RoomX = CenterRoomXCoord;
-        //     if(DoorInStartingRoom == DOOR_EAST)
-        //     {
-        //         RoomX += 1;
-        //     }
-        //     if(DoorInStartingRoom == DOOR_NORTH)
-        //     {
-        //         RoomY += 1;
-        //     }
-        //     if(DoorInStartingRoom == DOOR_WEST)
-        //     {
-        //         RoomX -= 1;
-        //     }
-        //     if(DoorInStartingRoom == DOOR_SOUTH)
-        //     {
-        //         RoomY -= 1;
-        //     }
-        //
-        //     u32 NumberOfDoorsToMake = GetRandomNumber(&GameState->RandomSeed, 1, 4);
-        //     bool32 DrawDoorOnThisWall[5] = {0};
-        //     for(int NthDoorToMake = 1;
-        //         NthDoorToMake <= NumberOfDoorsToMake;
-        //         ++NthDoorToMake)
-        //     {
-        //         u32 WhichDoor;
-        //         do
-        //         {
-        //             WhichDoor = GetRandomNumber(&GameState->RandomSeed, 1, 4);
-        //         } while(DrawDoorOnThisWall[WhichDoor] == true);
-        //         DrawDoorOnThisWall[WhichDoor] = true;
-        //     }
-        //     MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, 
-        //                    RoomY, RoomX, 
-        //                    DrawDoorOnThisWall[DOOR_EAST], 
-        //                    DrawDoorOnThisWall[DOOR_NORTH], 
-        //                    DrawDoorOnThisWall[DOOR_WEST], 
-        //                    DrawDoorOnThisWall[DOOR_SOUTH]); 
-        // }
         GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomYCoord, 4, TileMapPointer->TilesPerRoomY);
         GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffset.Y = 0.6f;
@@ -1153,12 +1208,21 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     //
                     //          etc.
 
+                    tile_screen_coordinates TileScreenCoords = GetScreenCoordinatesForBirdsEyeView(Buffer->Width * 0.5f,
+                                                                                                   Buffer->Height * 0.5f,
+                                                                                                   RelTileX, 
+                                                                                                   RelTileY,
+                                                                                                   TileMapPointer->TileSideInPixels);
+
+
+#if 0
                     vector2 TileMin;
                     TileMin.X = Origin.X - (TileMapPointer->TileSideInPixels * 0.5f) + (TileMapPointer->TileSideInPixels * RelTileX);
                     TileMin.Y = Origin.Y - (TileMapPointer->TileSideInPixels * 0.5f) - (TileMapPointer->TileSideInPixels * RelTileY);
                     vector2 TileMax;
                     TileMax.X = TileMin.X + (TileMapPointer->TileSideInPixels);
                     TileMax.Y = TileMin.Y + (TileMapPointer->TileSideInPixels);
+#endif
 
                     // To scroll the screen, we then OFFSET that tile position by how far the player has moved relative to the
                     //      center of the tile they're currently on. e.g., if the player's tile offset is X = 0.3, Y = -0.6,
@@ -1176,23 +1240,23 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     //      Hence below the OffsetX values are subtracted from the tile's position -- we're moving
                     //      the tile TOWARD the player.
 
-                    TileMin.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
-                    TileMax.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
-                    TileMin.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
-                    TileMax.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
+                    TileScreenCoords.Min.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
+                    TileScreenCoords.Max.X -= (PlayerPosition->TileOffset.X * MetersToPixels);
+                    TileScreenCoords.Min.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
+                    TileScreenCoords.Max.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
                     if( (PlayerPosition->AbsTileY == TileToDrawY) && (PlayerPosition->AbsTileX == TileToDrawX) )
                     {
                         real32 TileR = 0.25f;
                         real32 TileG = 0.25f;
                         real32 TileB = 0.25f;
-                        DrawRectangle(Buffer, TileMin, TileMax, TileR, TileG, TileB);
+                        DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, TileR, TileG, TileB);
                     }
                     else
                     {
-                        BlitBitmap(Buffer, TileMin, TileMax, &GameState->WaterSmall);
+                        BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->WaterSmall);
                         if(TileValue == TILE_BLOCK)
                         {
-                            BlitBitmapAndBlend(Buffer, TileMin, TileMax, &GameState->TreeSmall);
+                            BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->TreeSmall);
                         }
                     }
                 }
@@ -1206,15 +1270,44 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         real32 PlayerScreenCoordMaxX = PlayerScreenCoordMinX + (PLAYER_WIDTH * MetersToPixels);
         vector2 PlayerMin = {PlayerScreenCoordMinX, PlayerScreenCoordMinY};
         vector2 PlayerMax = {PlayerScreenCoordMaxX, PlayerScreenCoordMaxY};
+
+        bitmap *PlayerSprite;
+        switch(GameState->PlayerFacing)
+        {
+            case(FACING_RIGHT):
+                {
+                    PlayerSprite = &GameState->BeaverRight;
+                } break;
+
+            case(FACING_UP):
+                {
+                    PlayerSprite = &GameState->BeaverUp;
+                } break;
+
+            case(FACING_LEFT):
+                {
+                    PlayerSprite = &GameState->BeaverLeft;
+                } break;
+
+            case(FACING_DOWN):
+                {
+                    PlayerSprite = &GameState->BeaverDown;
+                } break;
+        }
+        BlitBitmapWithNearestNeighborAndBlend(Buffer, PlayerMin, PlayerMax, PlayerSprite);
+
     }
     else
     {
         TileMapPointer->TileSideInPixels = 64;
         real32 MetersToPixels = (real32)TileMapPointer->TileSideInPixels / TileMapPointer->TileSideInMeters;
+
+        // Start drawing a half-tile width outside of the screen so that the walls are cut in half and actually
+        //      look like walls.
         real32 OffsetPlayfieldXBy = -((real32)TileMapPointer->TileSideInPixels * 0.5f);
         real32 OffsetPlayfieldYBy = (real32)TileMapPointer->TileSideInPixels * 0.5f;
         
-        // draw tiles
+        // Draw tiles. Origin is X = 0, Y = 0.
         vector2 Origin = {OffsetPlayfieldXBy, ((real32)Buffer->Height + OffsetPlayfieldYBy)};
         room_position PlayerRoom = GetRoomCoordsFromAbsTiles(TileMapPointer, 
                                                              GameState->PlayerPosition.AbsTileY,
@@ -1230,9 +1323,9 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 u32 ThisTileAbsY = GetAbsTileFromRoomCoords(PlayerRoom.RoomY, RelTileY, TileMapPointer->TilesPerRoomY);
                 u32 ThisTileAbsX = GetAbsTileFromRoomCoords(PlayerRoom.RoomX, RelTileX, TileMapPointer->TilesPerRoomX);
 
-                tile_screen_coordinates TileScreenCoords = GetScreenCoordinatesForRelTile(Origin,
-                                                                                          RelTileX, RelTileY,
-                                                                                          TileMapPointer->TileSideInPixels);
+                tile_screen_coordinates TileScreenCoords = GetScreenCoordinatesForRoomView(Origin,
+                                                                                           RelTileX, RelTileY,
+                                                                                           TileMapPointer->TileSideInPixels);
 
                 tile_value TileValue = GetTileValue(&GameState->WorldArena, TileMapPointer, ThisTileAbsY, ThisTileAbsX);
                 if( (RelTileY == PlayerRoom.TileInRoomY) && (RelTileX == PlayerRoom.TileInRoomX) )
@@ -1248,72 +1341,34 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     if(TileValue == TILE_BLOCK)
                     {
                         BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->Tree);
-#if 0
-                        for(int RowInTile = 0;
-                            RowInTile < TileMapPointer->TileSideInPixels;
-                            ++RowInTile)
-                        {
-                            for(int PixelInRow = 0;
-                                PixelInRow < TileMapPointer->TileSideInPixels;
-                                ++PixelInRow)
-                            {
-                                vector2 ScreenCoordinateForThisPixel = {(TileScreenCoords.Min.X + PixelInRow),
-                                    (TileScreenCoords.Min.Y + RowInTile)};
-                                if((ScreenCoordinateForThisPixel.X >= 0 && ScreenCoordinateForThisPixel.X < Buffer->Width) &&
-                                   (ScreenCoordinateForThisPixel.Y >= 0 && ScreenCoordinateForThisPixel.Y < Buffer->Height))
-                                {
-                                    u32 *SrcPixelsStart = (u32 *)GameState->Tree.Pixels + 
-                                                            (GameState->Tree.Height - 1) * (GameState->Tree.Width);
-                                    u32 *SrcPixelToCopy = SrcPixelsStart - 
-                                                            ((RowInTile / 2) * GameState->Tree.Width) +
-                                                            (PixelInRow / 2);
-
-                                    u32 *Dest = (u32 *)Buffer->Memory + 
-                                                ((u32)ScreenCoordinateForThisPixel.Y * Buffer->Width) + 
-                                                ((u32)ScreenCoordinateForThisPixel.X);
-
-                                    u32 SourceAlpha = *((u8 *)SrcPixelToCopy + 3);
-                                    u32 SourceRed = *((u8 *)SrcPixelToCopy + 2);
-                                    u32 SourceGreen = *((u8 *)SrcPixelToCopy + 1);
-                                    u32 SourceBlue = *((u8 *)SrcPixelToCopy + 0);
-
-                                    u32 DestRed = *((u8 *)Dest + 2);
-                                    u32 DestGreen = *((u8 *)Dest + 1);
-                                    u32 DestBlue = *((u8 *)Dest + 0);
-
-                                    real32 RealAlpha = (real32)SourceAlpha / 255.0f;
-
-                                    u32 LerpRed = Lerp(DestRed, SourceRed, RealAlpha);
-                                    u32 LerpGreen = Lerp(DestGreen, SourceGreen, RealAlpha);
-                                    u32 LerpBlue = Lerp(DestBlue, SourceBlue, RealAlpha);
-
-                                    u32 Color = ((LerpRed << 16) | (LerpGreen << 8) | (LerpBlue << 0));
-                                    *Dest = Color;
-                                }
-                            }
-                        }
-#endif
                     }
                 }
             }
         }
 
-        // Draw player. When we got the PlayerRoom above, it gave us the player's tile in the current room, so use that here:
+        //  PlayerScreenCoords is computed by first determining what tile the player is on...
         u32 PlayerTileX = PlayerRoom.TileInRoomX;
         u32 PlayerTileY = PlayerRoom.TileInRoomY;
-        tile_screen_coordinates PlayerScreenCoords = GetScreenCoordinatesForRelTile(Origin,
+        tile_screen_coordinates PlayerScreenCoords = GetScreenCoordinatesForRoomView(Origin,
                                                                                     PlayerTileX, PlayerTileY,
                                                                                     TileMapPointer->TileSideInPixels);
         PlayerScreenCoords.Min.X += (
-                                     (TileMapPointer->TileSideInMeters * 0.5f) +  
-                                     (GameState->PlayerPosition.TileOffset.X) -
-                                     (PLAYER_WIDTH * 0.5f)
-                                    ) * MetersToPixels;
-        PlayerScreenCoords.Max.X = PlayerScreenCoords.Min.X + (PLAYER_WIDTH * MetersToPixels);
+                                     (TileMapPointer->TileSideInMeters * 0.5f) +  // Then moving them to the center of the tile ...
+                                                                                  
+                                     (GameState->PlayerPosition.TileOffset.X) -   // Then offsetting them from the center by their offset.
+                                                                                  
+                                     (PLAYER_WIDTH * 0.5f)                        // That gives us the center of the bottom of the rectangle
+                                                                                  //        that the player is drawn into.
 
-        PlayerScreenCoords.Max.Y -= ( (TileMapPointer->TileSideInMeters * 0.5f) + 
-                                      GameState->PlayerPosition.TileOffset.Y) * 
-            MetersToPixels;
+                                    ) * MetersToPixels;                           // And finally, convert the result of that computation
+                                                                                  //    from meters to a pixel coordinate for the screen.
+
+        PlayerScreenCoords.Max.X = PlayerScreenCoords.Min.X + (PLAYER_WIDTH * MetersToPixels);  
+
+        PlayerScreenCoords.Max.Y -= ( (TileMapPointer->TileSideInMeters * 0.5f) + // For Y, move to center of the tile
+                                      GameState->PlayerPosition.TileOffset.Y) *   // Offset position by offset value
+                                        MetersToPixels;                           // And convert from meters to pixel coordinate. 
+            
         PlayerScreenCoords.Min.Y = PlayerScreenCoords.Max.Y - (PLAYER_HEIGHT * MetersToPixels);
 
         bitmap *PlayerSprite;
@@ -1339,32 +1394,11 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 PlayerSprite = &GameState->BeaverDown;
             } break;
         }
-        BlitBitmapAndBlend(Buffer, PlayerScreenCoords.Min, PlayerScreenCoords.Max, PlayerSprite);
+        BlitBitmapWithNearestNeighborAndBlend(Buffer, PlayerScreenCoords.Min, PlayerScreenCoords.Max, PlayerSprite);
+        vector2 LineMin = {PlayerScreenCoords.Min.X, PlayerScreenCoords.Max.Y - 2};
+        vector2 LineMax = {PlayerScreenCoords.Max.X, PlayerScreenCoords.Max.Y + 2};
+        DrawRectangle(Buffer, LineMin, LineMax, 1.0f, 0, 1.0f);
 
-#if 0
-        DrawRectangle(Buffer,
-                      PlayerScreenCoords.Min, PlayerScreenCoords.Max,
-                      PLAYER_R, PLAYER_G, PLAYER_B);
-#endif
-
-    //     vector2 Min = {((real32)4 * TileMapPointer->TileSideInPixels), ((real32)4 * TileMapPointer->TileSideInPixels)};
-    //     vector2 Max = {(Min.X + TileMapPointer->TileSideInPixels), (Min.Y + TileMapPointer->TileSideInPixels)};
-    //
-    //     u32 *SrcPointer = (u32 *)GameState->Tree.Pixels;
-    //     u8 *DestRow = (u8 *)Buffer->Memory + ((s32)Min.Y * Buffer->Pitch) + ((s32)Min.X * Buffer->BytesPerPixel);
-    //     for(int Y = Min.Y;
-    //         Y < Max.Y;
-    //         ++Y)
-    //     {
-    //         u32 *Dest = (u32 *)DestRow;
-    //         for(int X = Min.X;
-    //             X < Max.X;
-    //             ++X)
-    //         {
-    //             *Dest++ = *SrcPointer++;
-    //         }
-    //         DestRow += Buffer->Pitch;
-    //     }
     }
 }
 
@@ -1373,29 +1407,3 @@ extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
     game_state *GameState = (game_state *)Memory->PermanentStorage;
     GameOutputSound(GameState, SoundBuffer, 400);
 }
-/*
-internal void
-RenderWeirdGradient(game_offscreen_buffer *Buffer, int BlueOffset, int GreenOffset)
-{
-    // TODO(casey): Let's see what the optimizer does
-
-    u8 *Row = (u8 *)Buffer->Memory;    
-    for(int Y = 0;
-        Y < Buffer->Height;
-        ++Y)
-    {
-        u32 *Pixel = (u32 *)Row;
-        for(int X = 0;
-            X < Buffer->Width;
-            ++X)
-        {
-            u8 Blue = (u8)(X + BlueOffset);
-            u8 Green = (u8)(Y + GreenOffset);
-
-            *Pixel++ = ((Green << 16) | Blue);
-        }
-        
-        Row += Buffer->Pitch;
-    }
-}
-*/
