@@ -44,7 +44,7 @@ enum tile_value
 {
     TILE_INVALID,
     TILE_WATER,
-    TILE_BLOCK
+    TILE_TREE
 };
 
 enum player_facing

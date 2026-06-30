@@ -25,6 +25,9 @@
 #define PLAYER_G 0.47f
 #define PLAYER_B 0.37f
 
+// Pi
+#define PI 3.14159265358f
+
 internal void
 GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer, int ToneHz)
 {
@@ -220,9 +223,16 @@ BlitBitmap(game_offscreen_buffer *Buffer, vector2 Min, vector2 Max, bitmap *Bitm
 }
 
 u32
-Lerp(u32 A, u32 B, real32 T)
+LerpWithUInts(u32 A, u32 B, real32 T)
 {
     u32 ToReturn = A * (1 - T) + (T * B);
+    return(ToReturn);
+}
+
+real32
+LerpWithReal32s(real32 A, real32 B, real32 T)
+{
+    real32 ToReturn = A * (1.0f - T) + (T * B);
     return(ToReturn);
 }
 
@@ -287,9 +297,9 @@ BlitBitmapAndBlend(game_offscreen_buffer *Buffer, vector2 Min, vector2 Max, bitm
 
             real32 RealAlpha = (real32)SourceAlpha / 255.0f;
 
-            u32 LerpRed = Lerp(DestRed, SourceRed, RealAlpha);
-            u32 LerpGreen = Lerp(DestGreen, SourceGreen, RealAlpha);
-            u32 LerpBlue = Lerp(DestBlue, SourceBlue, RealAlpha);
+            u32 LerpRed = LerpWithUInts(DestRed, SourceRed, RealAlpha);
+            u32 LerpGreen = LerpWithUInts(DestGreen, SourceGreen, RealAlpha);
+            u32 LerpBlue = LerpWithUInts(DestBlue, SourceBlue, RealAlpha);
 
             u32 Color = ((LerpRed << 16) | (LerpGreen << 8) | (LerpBlue << 0));
 
@@ -493,7 +503,7 @@ MakeSimpleRoom(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 RoomY, 
             if( (RelRow == 0) || (RelRow == TileMapPointer->TilesPerRoomY - 1) ||
                 (RelCol == 0) || (RelCol == TileMapPointer->TilesPerRoomX - 1) )
             {
-                TileValue = TILE_BLOCK;
+                TileValue = TILE_TREE;
             }
 
             u32 ThisTileAbsY = GetAbsTileFromRoomCoords(RoomY, RelRow, TileMapPointer->TilesPerRoomY);
@@ -542,23 +552,24 @@ IsTileAccessible(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTi
 {
     tile_value TileValue = GetTileValue(ArenaPointer, TileMapPointer, AbsTileY, AbsTileX);
     // e.g., TileValue == 0, TILE_INVALID
-    //      IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_BLOCK) )
-    //                   = ( (TILE_INVALID != TILE_INVALID) && (TILE_INVALID != TILE_BLOCK) )
+    //      IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_TREE) )
+    //                   = ( (TILE_INVALID != TILE_INVALID) && (TILE_INVALID != TILE_TREE) )
     //                   = ( 0 && 1)
     //                   = 0, false
     //
     // e.g., TileValue == TILE_WATER, 2
-    //      IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_BLOCK) )
-    //                   = ( (TILE_WATER != TILE_INVALID) && (TILE_WATER != TILE_BLOCK) )
+    //      IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_TREE) )
+    //                   = ( (TILE_WATER != TILE_INVALID) && (TILE_WATER != TILE_TREE) )
     //                   = ( 1 && 1)
     //                   = 1, true
-    bool IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_BLOCK) );
+    bool IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_TREE) );
     return(IsAccessible);
 }
 
 u32
 GetRandomNumber(u32 *GameStateRandomSeed, u32 LowerBound, u32 UpperBound)
 {
+    Assert(UpperBound > LowerBound);
     *GameStateRandomSeed ^= *GameStateRandomSeed << 13;
     *GameStateRandomSeed ^= *GameStateRandomSeed >> 17;
     *GameStateRandomSeed ^= *GameStateRandomSeed << 5;
@@ -575,12 +586,44 @@ GetRandomNumber(u32 *GameStateRandomSeed, u32 LowerBound, u32 UpperBound)
     return(ToReturn);
 }
 
-// inline u32
-// PickRandomElementInArray(u32 *RandomSeedPointer, u32 *Array, u32 ArraySize)
-// {
-//     u32 Choice = GetRandomNumber(RandomSeedPointer, 0, ArraySize-1);
-//     return(Choice);
-// }
+real32
+GetRandomReal(u32 *GameStateRandomSeed, real32 LowerBound, real32 UpperBound)
+{
+    Assert(UpperBound > LowerBound);
+    // We're basically just adapting the C standard library's conventions for random numbers:
+    //      apparently rand() generates random values in the range of 0 to the #define RAND_MAX,
+    //      which is 0x7FFFFFFF (max value for a signed 32-bit int).
+    //
+    //      (Per this blog post: https://c-for-dummies.com/blog/?p=1458)
+    //
+    // But since we're only working with unsigned ints in our generator, we use 0xFFFFFFFF instead of 0x7FFFFFFF.
+    // This is the maximum random number possible. Dividing our generated random number, cast to a real32, by this maximum
+    //      random value gives us a value in the range of 0 to 1. We then use it to Lerp between the Lower and
+    //      Upper bounds.
+
+    u32 MaxRandomNumber = 0xFFFFFFFF;
+
+    *GameStateRandomSeed ^= *GameStateRandomSeed << 13;
+    *GameStateRandomSeed ^= *GameStateRandomSeed >> 17;
+    *GameStateRandomSeed ^= *GameStateRandomSeed << 5;
+
+    real32 TParameterForLerp = (real32)*GameStateRandomSeed / (real32)MaxRandomNumber;
+
+    real32 ToReturn = LerpWithReal32s(LowerBound, UpperBound, TParameterForLerp);
+
+    return(ToReturn);
+}
+
+vector2
+GetVector2FromPolarCoordinates(real32 Argument, real32 Modulus)
+{
+    real32 X = Modulus * Cos(Argument);
+    real32 Y = Modulus * Sin(Argument);
+
+    vector2 Result = {X, Y};
+    
+    return(Result);
+}
 
 enum door
 {
@@ -638,7 +681,7 @@ GetDoorStatuses(memory_arena *WorldArenaPointer, tile_map *TileMapPointer, u32 *
     else
     {
         tile_value EastRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, EastRoomPosition);
-        if(EastRoomBottomLeftTile == TILE_BLOCK)
+        if(EastRoomBottomLeftTile == TILE_TREE)
         {
             DoorStatusArray[DOOR_EAST] = ADJACENT_ROOM_OCCUPIED;
         }
@@ -657,7 +700,7 @@ GetDoorStatuses(memory_arena *WorldArenaPointer, tile_map *TileMapPointer, u32 *
     else
     {
         tile_value NorthRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, NorthRoomPosition);
-        if(NorthRoomBottomLeftTile == TILE_BLOCK)
+        if(NorthRoomBottomLeftTile == TILE_TREE)
         {
             DoorStatusArray[DOOR_NORTH] = ADJACENT_ROOM_OCCUPIED;
         }
@@ -676,7 +719,7 @@ GetDoorStatuses(memory_arena *WorldArenaPointer, tile_map *TileMapPointer, u32 *
     else
     {
         tile_value WestRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, WestRoomPosition);
-        if(WestRoomBottomLeftTile == TILE_BLOCK)
+        if(WestRoomBottomLeftTile == TILE_TREE)
         {
             DoorStatusArray[DOOR_WEST] = ADJACENT_ROOM_OCCUPIED;
         }
@@ -695,7 +738,7 @@ GetDoorStatuses(memory_arena *WorldArenaPointer, tile_map *TileMapPointer, u32 *
     else
     {
         tile_value SouthRoomBottomLeftTile = GetTileValueFromRoomCoords(WorldArenaPointer, TileMapPointer, SouthRoomPosition);
-        if(SouthRoomBottomLeftTile == TILE_BLOCK)
+        if(SouthRoomBottomLeftTile == TILE_TREE)
         {
             DoorStatusArray[DOOR_SOUTH] = ADJACENT_ROOM_OCCUPIED;
         }
@@ -909,9 +952,9 @@ BlitBitmapWithNearestNeighborAndBlend(game_offscreen_buffer *Buffer, vector2 Min
 
             real32 RealAlpha = (real32)SourceAlpha / 255.0f;
 
-            u32 LerpRed = Lerp(DestRed, SourceRed, RealAlpha);
-            u32 LerpGreen = Lerp(DestGreen, SourceGreen, RealAlpha);
-            u32 LerpBlue = Lerp(DestBlue, SourceBlue, RealAlpha);
+            u32 LerpRed = LerpWithUInts(DestRed, SourceRed, RealAlpha);
+            u32 LerpGreen = LerpWithUInts(DestGreen, SourceGreen, RealAlpha);
+            u32 LerpBlue = LerpWithUInts(DestBlue, SourceBlue, RealAlpha);
 
             u32 Color = ((LerpRed << 16) | (LerpGreen << 8) | (LerpBlue << 0));
 
@@ -969,30 +1012,64 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMapPointer->TileChunksArray = PushArray(&GameState->WorldArena, tile_chunk, 
                                                     TileMapPointer->ChunksInMapY * TileMapPointer->ChunksInMapX);
 
-        // Generate the world like this:
-        //      Start in the center room e.g., Room(9, 5)
-        //      Generate the room by drawing the tiles with a door on each wall
-        //      Iterate through the 4 doors:
-        //          For each door, draw a series of 10 connected rooms, deciding at random how many doors each room will have
-        //          For the first pass, draw the 10 rooms by picking one door at random from those created to create the
-        //              next room until 10 have been drawn.
-        //          For a second pass, pop the created 10 rooms off of the stack and draw dead-end rooms for the doors that were not
-        //              on the main path.
-        //          Requirements for a room:
-        //              The code should check that the room is within the bounds of the tilemap
-        //              Each room must have a door connecting to the door on the room created just before it
-        //              Before drawing a new room, the code should check whether there is already one there by reading
-        //                  the tile in the bottom-left corner of the hypothetical room, which is guaranteed to have a block 
-        //                  if there is indeed a room already there
-        //              If a room is already there, the code should just draw a connecting door and move on to the next door,
-        //                  if there is one.
-
         u32 CenterRoomYCoord = 10;
         u32 CenterRoomXCoord = 10;
         u32 RoomsPerPath = 20;
         // Center room at Y = 10, X = 10                                                            E     N     W     S
         MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, CenterRoomYCoord, CenterRoomXCoord, true, true, true, true);
 
+        // Place a random tree on a random tile.
+        //      First generate a random angle in the range of 0 to 2 pi, which we call the argument
+        //      since we are using the parlance of polar coordinates.
+        real32 Argument = GetRandomReal(&GameState->RandomSeed, 0, (PI * 2.0f));
+        
+        // How many meters are there in the world from left to right?
+        real32 MetersInWorldX = TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX * TileMapPointer->TileSideInMeters;
+
+        // How many meters are there in the world from top to bottom?
+        real32 MetersInWorldY = TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY * TileMapPointer->TileSideInMeters;
+
+        // Since there are fewer meters in the world on the Y axis, let's constrain the distance from the home screen
+        //      to a grove center to be three-quarters the distance from the home screen to the top or bottom of the world.
+        //      Again, we use modulus since we are thinking in terms of polar coordinates.
+        real32 ModulusMax = MetersInWorldY * 0.5f * 0.75f;
+
+        // And let's set the minimum modulus to be at least two screen-heighths from the home screen.
+        real32 ModulusMin = TileMapPointer->TilesPerRoomY * TileMapPointer->TileSideInMeters;
+
+        // Get a modulus within those boundaries:
+        real32 Modulus = GetRandomReal(&GameState->RandomSeed, ModulusMin, ModulusMax);
+
+        // Convert polar coordinates to X and Y coordinates
+        vector2 TreeVector = GetVector2FromPolarCoordinates(Argument, (TileMapPointer->TilesPerRoomY * TileMapPointer->TileSideInMeters));
+
+        // Find the middle tile of the world, or the origin in our coordinate system
+        u32 MiddleTileX = TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX / 2;
+        u32 MiddleTileY = TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY / 2;
+        tile_map_position OriginTile = {MiddleTileX, MiddleTileY};
+
+        // Get the tree tile's coordinates in the tilemap by using TreeVector as an offset from the middle
+        //      tile, i.e., the origin of the coordinate system
+        u32 TreeTileX = MiddleTileX + RoundReal32ToS32(TreeVector.X);
+        Assert(TreeTileX < TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX);
+        u32 TreeTileY = MiddleTileY + RoundReal32ToS32(TreeVector.Y);
+        Assert(TreeTileY < TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY);
+        tile_map_position TreeTile = {TreeTileX, TreeTileY};
+
+        SetTileValue(&GameState->WorldArena, TileMapPointer, TreeTile.AbsTileY, TreeTile.AbsTileX, TILE_TREE);
+
+
+        
+
+
+
+
+
+
+
+
+
+#if 0
         // Path off of east room
         MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 10, 11);
 
@@ -1004,7 +1081,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
         // Path off of south room
         MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 9, 10);
-
+#endif
         GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomYCoord, 4, TileMapPointer->TilesPerRoomY);
         GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffset.Y = 0.6f;
@@ -1254,7 +1331,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     else
                     {
                         BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->WaterSmall);
-                        if(TileValue == TILE_BLOCK)
+                        if(TileValue == TILE_TREE)
                         {
                             BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->TreeSmall);
                         }
@@ -1338,7 +1415,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->Water);
 
                     // DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, WATER_R, WATER_G, WATER_B);
-                    if(TileValue == TILE_BLOCK)
+                    if(TileValue == TILE_TREE)
                     {
                         BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->Tree);
                     }
