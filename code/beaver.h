@@ -1,5 +1,6 @@
 #if !defined(BEAVER_H)
 #include "beaver_platform.h"
+#include "handmade_intrinsics.h"
 
 #define internal static 
 #define local_persist static 
@@ -22,6 +23,33 @@
 #define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
 // TODO(casey): swap, min, max ... macros???
 
+#define CHUNK_DIM 16
+#define CHUNK_MASK 4
+
+#define PLAYER_HEIGHT 1.05f
+#define PLAYER_WIDTH 1.05f
+
+#define TILES_IN_WORLD_Y (TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY)
+#define TILES_IN_WORLD_X (TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX)
+
+// Water
+#define WATER_R 0.61f
+#define WATER_G 0.86f
+#define WATER_B 0.99f
+
+// Blocks
+#define BLOCK_R 0.59f
+#define BLOCK_G 0.29f
+#define BLOCK_B 0
+
+// Player
+#define PLAYER_R 0.35f 
+#define PLAYER_G 0.47f
+#define PLAYER_B 0.37f
+
+// Pi
+#define PI 3.14159265358f
+
 inline game_controller_input *GetController(game_input *Input, int unsigned ControllerIndex)
 {
     Assert(ControllerIndex < ArrayCount(Input->Controllers));
@@ -30,7 +58,37 @@ inline game_controller_input *GetController(game_input *Input, int unsigned Cont
     return(Result);
 }
 
+struct memory_arena
+{
+    u8 *Base;
+    memory_index Size;
+    memory_index Used;
+};
+
+void
+InitializeArena(memory_arena *ArenaPointer, u8 *Base, memory_index Size)
+{
+    ArenaPointer->Base =Base;
+    ArenaPointer->Size = Size;
+    ArenaPointer->Used = 0;
+}
+
+void *
+PushToArena_(memory_arena *ArenaPointer, memory_index NumBytes)
+{
+    Assert(ArenaPointer->Used + NumBytes <= ArenaPointer->Size);
+    void *ToReturn = ArenaPointer->Base + ArenaPointer->Used;
+    ArenaPointer->Used += NumBytes;
+    return(ToReturn);
+}
+
+#define PushStruct(ArenaPointer, Type) (Type *)PushToArena_((ArenaPointer), sizeof(Type))
+#define PushArray(ArenaPointer, Type, HowMany) (Type *)PushToArena_((ArenaPointer), sizeof(Type) * (HowMany))
+
 #include "beaver_math.h"
+#include "tile.h"
+#include "procedural.h"
+
 inline u32
 SafeTruncateUInt64(u64 Value)
 {
@@ -40,12 +98,6 @@ SafeTruncateUInt64(u64 Value)
     return(Result);
 }
 
-enum tile_value
-{
-    TILE_INVALID,
-    TILE_WATER,
-    TILE_TREE
-};
 
 enum player_facing
 {
@@ -53,67 +105,6 @@ enum player_facing
     FACING_UP,
     FACING_LEFT,
     FACING_DOWN
-};
-
-struct memory_arena
-{
-    u8 *Base;
-    memory_index Size;
-    memory_index Used;
-};
-
-struct tile_chunk_position
-{
-    u32 ChunkX;
-    u32 ChunkY;
-
-    u32 TileInChunkX;
-    u32 TileInChunkY;
-};
-
-struct tile_map_position
-{
-    u32 AbsTileX;
-    u32 AbsTileY;
-    vector2 TileOffset;
-};
-
-struct room_position
-{
-    u32 RoomY;
-    u32 RoomX;
-    u32 TileInRoomY;
-    u32 TileInRoomX;
-};
-
-struct tile_screen_coordinates
-{
-    vector2 Min;
-    vector2 Max;
-};
-
-struct tile_chunk
-{
-    u32 *TilesArray;
-};
-
-struct tile_map
-{
-    u32 ChunkMask;
-    u32 ChunkDim;
-
-    real32 TileSideInMeters;
-    s32 TileSideInPixels;
-
-    u32 RoomsInMapY;
-    u32 RoomsInMapX;
-    u32 TilesPerRoomY;
-    u32 TilesPerRoomX;
-
-    u32 ChunksInMapY;
-    u32 ChunksInMapX;
-
-    tile_chunk *TileChunksArray;
 };
 
 struct world

@@ -12,8 +12,6 @@
 // and remove math.h
 //
 
-#include "math.h"
-
 inline s32
 RoundReal32ToS32(real32 Real32)
 {

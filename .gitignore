@@ -1,2 +1,6 @@
 build/
-code/temp.txt
+*.txt
+*.png
+*.bmp
+data/Sprout Lands - Sprites - Basic pack/
+*.aseprite

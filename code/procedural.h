@@ -1,0 +1,16 @@
+enum door
+{
+    DOOR_INVALID = 0,
+    DOOR_EAST = 1,
+    DOOR_NORTH = 2,
+    DOOR_WEST = 3,
+    DOOR_SOUTH = 4
+};
+
+enum door_status
+{
+    DOOR_STATUS_INVALID = 0,
+    ADJACENT_ROOM_INVALID = 1,
+    ADJACENT_ROOM_OCCUPIED = 2,
+    ADJACENT_ROOM_AVAILABLE = 3
+};

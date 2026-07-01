@@ -108,5 +108,30 @@ Inner(vector2 A, vector2 B)
     return(Result);
 }
 
+u32
+LerpWithUInts(u32 A, u32 B, real32 T)
+{
+    u32 ToReturn = A * (1 - T) + (T * B);
+    return(ToReturn);
+}
+
+real32
+LerpWithReal32s(real32 A, real32 B, real32 T)
+{
+    real32 ToReturn = A * (1.0f - T) + (T * B);
+    return(ToReturn);
+}
+
+vector2
+GetVector2FromPolarCoordinates(real32 Argument, real32 Modulus)
+{
+    real32 X = Modulus * Cos(Argument);
+    real32 Y = Modulus * Sin(Argument);
+
+    vector2 Result = {X, Y};
+
+    return(Result);
+}
+
 #define BEAVER_MATH_H
 #endif
