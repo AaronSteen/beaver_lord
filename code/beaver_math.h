@@ -133,5 +133,13 @@ GetVector2FromPolarCoordinates(real32 Argument, real32 Modulus)
     return(Result);
 }
 
+real32
+SquaredMagnitude(vector2 A)
+{
+    real32 Result = Inner(A, A);
+
+    return(Result);
+}
+
 #define BEAVER_MATH_H
 #endif

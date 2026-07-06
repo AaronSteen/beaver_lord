@@ -2,6 +2,7 @@ enum tile_value
 {
     TILE_INVALID,
     TILE_WATER,
+    TILE_HOTSPOT,
     TILE_TREE
 };
 

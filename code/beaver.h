@@ -169,7 +169,16 @@ struct game_state
     bitmap BeaverUp;
     bitmap BeaverLeft;
     bitmap BeaverDown;
+
+    tile_map_position GroveHotspots[3];
 };
+
+struct debug_state
+{
+    memory_arena DebugArena;
+    u8 *DebugText;
+};
+
 
 #define BEAVER_H
 #endif

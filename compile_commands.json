@@ -1,0 +1,22 @@
+[
+  {
+    "directory": "/mnt/c/Users/ams56/work/beaver/build",
+    "command": "clang -target x86_64-w64-mingw32 -isystem /usr/x86_64-w64-mingw32/include -std=c++17 -Wno-unused-function -Wno-unused-variable -Wno-sign-compare -Wno-missing-field-initializers -DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_WIN32=1 /mnt/c/Users/ams56/work/beaver/code/beaver.cpp",
+    "file": "/mnt/c/Users/ams56/work/beaver/code/beaver.cpp"
+},
+  {
+    "directory": "/mnt/c/Users/ams56/work/beaver/build",
+    "command": "clang -target x86_64-w64-mingw32 -isystem /usr/x86_64-w64-mingw32/include -std=c++17 -Wno-unused-function -Wno-unused-variable -Wno-sign-compare -Wno-missing-field-initializers -DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_WIN32=1 /mnt/c/Users/ams56/work/beaver/code/win32_handmade.cpp",
+    "file": "/mnt/c/Users/ams56/work/beaver/code/win32_handmade.cpp"
+},
+  {
+    "directory": "/mnt/c/Users/ams56/work/beaver/build",
+    "command": "clang -target x86_64-w64-mingw32 -isystem /usr/x86_64-w64-mingw32/include -std=c++17 -Wno-unused-function -Wno-unused-variable -Wno-sign-compare -Wno-missing-field-initializers -DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_WIN32=1 -include /mnt/c/Users/ams56/work/beaver/code/beaver.h /mnt/c/Users/ams56/work/beaver/code/tile.cpp",
+    "file": "/mnt/c/Users/ams56/work/beaver/code/tile.cpp"
+},
+  {
+    "directory": "/mnt/c/Users/ams56/work/beaver/build",
+    "command": "clang -target x86_64-w64-mingw32 -isystem /usr/x86_64-w64-mingw32/include -std=c++17 -Wno-unused-function -Wno-unused-variable -Wno-sign-compare -Wno-missing-field-initializers -DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_WIN32=1 -include /mnt/c/Users/ams56/work/beaver/code/beaver.h -include /mnt/c/Users/ams56/work/beaver/code/tile.cpp /mnt/c/Users/ams56/work/beaver/code/procedural.cpp",
+    "file": "/mnt/c/Users/ams56/work/beaver/code/procedural.cpp"
+}
+]

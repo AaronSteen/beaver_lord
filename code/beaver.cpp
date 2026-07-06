@@ -1,6 +1,24 @@
 #include "beaver.h"
 #include "tile.cpp"
 #include "procedural.cpp"
+#include "stb_easy_font.h"
+
+struct vertex
+{
+    real32 X;
+    real32 Y;
+    real32 Z;
+    u32 Color;
+};
+
+struct quad
+{
+    vertex TopLeft;
+    vertex TopRight;
+    vertex BottomRight;
+    vertex BottomLeft;
+};
+#define DEBUG_TEXT_BUFFER_SIZE Megabytes(2)
 
 internal void
 GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer, int ToneHz)
@@ -85,7 +103,7 @@ DrawTileWithOutline(game_offscreen_buffer *Buffer,
                     vector2 Min, vector2 Max,
                     real32 R, real32 G, real32 B)
 {
-s32 MinX = RoundReal32ToS32(Min.X);
+    s32 MinX = RoundReal32ToS32(Min.X);
     s32 MinY = RoundReal32ToS32(Min.Y);
     s32 MaxX = RoundReal32ToS32(Max.X);
     s32 MaxY = RoundReal32ToS32(Max.Y);
@@ -103,7 +121,7 @@ s32 MinX = RoundReal32ToS32(Min.X);
         MinX = 0;
     }
     if(MaxX > Buffer->Width)
-{
+    {
         MaxX = Buffer->Width;
     }
 
@@ -294,6 +312,27 @@ DEBUGLoadBitmap(thread_context *Thread, debug_platform_read_entire_file *ReadEnt
 }
 
 void
+DEBUGDrawText(game_offscreen_buffer *GameOffscreenBuffer, 
+              real32 X, real32 Y, 
+              char *StringText, u8 *RasterizedTextBuffer, 
+              real32 R, real32 G, real32 B)
+{
+    // Using stb parlance. We of course don't have quads, only rectangles
+    u32 DebugTextBufferSize = DEBUG_TEXT_BUFFER_SIZE;
+    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, RasterizedTextBuffer, DEBUG_TEXT_BUFFER_SIZE);
+    // STOP: this is written but untested; may be totally broken
+    for(int QuadIdx = 0;
+        QuadIdx < NumQuads;
+        ++QuadIdx)
+    {
+        quad *ThisQuad = (quad *)(RasterizedTextBuffer + QuadIdx * sizeof(quad));
+        vector2 Min = {X + ThisQuad->TopLeft.X*2.5f, Y + ThisQuad->TopLeft.Y*2.5f};
+        vector2 Max = {X + ThisQuad->BottomRight.X*2.5f, Y + ThisQuad->BottomRight.Y*2.5f};
+        DrawRectangle(GameOffscreenBuffer, Min, Max, R, G, B);
+    }
+}
+
+void
 RecanonicalizeCoordinate(tile_map *TileMapPointer, u32 *AbsTilePointer, real32 *TileOffsetPointer, u32 TilesInThisDimension)
 {
     // e.g., player is on AbsTile 274, starts at center of tile, and moves 0.9 meters to the left.
@@ -330,7 +369,6 @@ GetCanonicalPosition(tile_map *TileMapPointer, tile_map_position OldPosition)
 
     return(NewPosition);
 }
-
 
 void
 BlitBitmapWithNearestNeighborAndBlend(game_offscreen_buffer *Buffer, vector2 Min, vector2 Max, bitmap *Bitmap) 
@@ -416,20 +454,48 @@ BlitBitmapWithNearestNeighborAndBlend(game_offscreen_buffer *Buffer, vector2 Min
     }
 }
 
-
 #if defined __cplusplus
 extern "C"
 #endif
 // #define GAME_UPDATE_AND_RENDER(name) void name(thread_context *Thread, game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
+    // GameMemory.PermanentStorageSize = Megabytes(64);
+    // GameMemory.TransientStorageSize = Gigabytes(1);
+    //
+    // Use PermanentStorage for debug state and game state.
+    // debug state:
+    //      First 16 mb of permanent storage goes to debug_state struct + DebugArena
+    //          (DebugArena is where the stuff in DebugState is stored).
+    //      Note debug_state struct right now is 32 bytes (memory_arena struct and a u8 pointer),
+    //          so first 32 bytes of DebugState is the struct, and the remaining
+    //          ((1024 * 1024 = 1,048,576) - 32 = 1,048,544) bytes represent the DebugArena from which we can allocate
+    //          as needed. Right now we're only going to use 2mb for a buffer for storing rasterized debug text.
+    //
+    // game state:
+    //      game state memory starts at the (16 * 1024 * 1024)th byte in GameMemory.PermanentStorage,
+    //          and is for storing player position, some bitmaps for now, grove hotspots, etc.
+    u32 AmountOfMemoryForDebugState = Megabytes(16);
+    u32 AmountOfMemoryForGameState = Megabytes(48);
+
     Assert((&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0]) ==
            (ArrayCount(Input->Controllers[0].Buttons)));
-    Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
-    
-    game_state *GameState = (game_state *)Memory->PermanentStorage;
+
+    Assert(AmountOfMemoryForDebugState + AmountOfMemoryForGameState <= Memory->PermanentStorageSize);
+
+    debug_state *DebugState = (debug_state *)Memory->PermanentStorage;
+    game_state *GameState = (game_state *)((u8 *)Memory->PermanentStorage + AmountOfMemoryForDebugState);
     if(!Memory->IsInitialized)
     {
+        InitializeArena(&DebugState->DebugArena,
+                        (u8 *)Memory->PermanentStorage + sizeof(debug_state),
+                        AmountOfMemoryForDebugState - sizeof(debug_state));
+        DebugState->DebugText = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
+
+        InitializeArena(&GameState->WorldArena, 
+                        (u8 *)Memory->PermanentStorage + AmountOfMemoryForDebugState + sizeof(game_state),
+                        AmountOfMemoryForGameState - sizeof(game_state));
+
         GameState->Tree = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "tree.bmp");
         GameState->TreeSmall = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "tree_small.bmp");
         GameState->Water = DEBUGLoadBitmap(Thread, Memory->DEBUGPlatformReadEntireFile, "water.bmp");
@@ -441,11 +507,9 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         GameState->RandomSeed = Memory->RandomSeed;
         GameState->BirdsEye = false;
-        InitializeArena(&GameState->WorldArena, 
-                        (u8 *)Memory->PermanentStorage + sizeof(game_state),
-                        Memory->PermanentStorageSize - sizeof(game_state));
         GameState->WorldPointer = PushStruct(&GameState->WorldArena, world);
         world *WorldPointer = GameState->WorldPointer;
+
         WorldPointer->TileMapPointer = PushStruct(&GameState->WorldArena, tile_map);
         tile_map *TileMapPointer = WorldPointer->TileMapPointer;
         TileMapPointer->ChunkMask = 4;
@@ -457,8 +521,11 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMapPointer->TilesPerRoomY = 13;
         TileMapPointer->TilesPerRoomX = 17;
 
-        TileMapPointer->ChunksInMapY = ((TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY) / TileMapPointer->ChunkDim) + 1;
-        TileMapPointer->ChunksInMapX = ((TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX) / TileMapPointer->ChunkDim) + 1;
+        u32 TilesInWorldX = TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX;
+        u32 TilesInWorldY = TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY;
+
+        TileMapPointer->ChunksInMapX = (TilesInWorldX / TileMapPointer->ChunkDim) + 1;
+        TileMapPointer->ChunksInMapY = (TilesInWorldY / TileMapPointer->ChunkDim) + 1;
 
         TileMapPointer->TileChunksArray = PushArray(&GameState->WorldArena, tile_chunk, 
                                                     TileMapPointer->ChunksInMapY * TileMapPointer->ChunksInMapX);
@@ -469,70 +536,157 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Center room at Y = 10, X = 10                                                            E     N     W     S
         MakeSimpleRoom(&GameState->WorldArena, TileMapPointer, CenterRoomYCoord, CenterRoomXCoord, true, true, true, true);
 
-        // Place a random tree on a random tile.
-        //      First generate a random angle in the range of 0 to 2 pi, which we call the argument
-        //      since we are using the parlance of polar coordinates.
-        real32 Argument = GetRandomReal(&GameState->RandomSeed, 0, (PI * 2.0f));
-        
-        // How many meters are there in the world from left to right?
-        real32 MetersInWorldX = TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX * TileMapPointer->TileSideInMeters;
+        // Organize the world around three groves of trees.
+        // Procedurally generate three "hotspots" in the world around which the three groves will emanate.
+        // First, compute some constants used in the generation procedure.
 
-        // How many meters are there in the world from top to bottom?
-        real32 MetersInWorldY = TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY * TileMapPointer->TileSideInMeters;
+        // Store this locally so we don't have to dereference it all the time
+        real32 TileSideInMeters = TileMapPointer->TileSideInMeters;
+
+        // How many meters are there in the world from left to right? 499.8
+        real32 MetersInWorldX = TilesInWorldX * TileSideInMeters;
+
+        // How many meters are there in the world from top to bottom? 382.2
+        real32 MetersInWorldY = TilesInWorldY * TileSideInMeters;
 
         // Since there are fewer meters in the world on the Y axis, let's constrain the distance from the home screen
-        //      to a grove center to be three-quarters the distance from the home screen to the top or bottom of the world.
-        //      Again, we use modulus since we are thinking in terms of polar coordinates.
+        //      to the center of a grove to be three-quarters the distance from the home screen to the top or bottom of the world.
+        //      We use modulus since we are thinking in terms of polar coordinates.
         real32 ModulusMax = MetersInWorldY * 0.5f * 0.75f;
 
         // And let's set the minimum modulus to be at least two screen-heighths from the home screen.
-        real32 ModulusMin = TileMapPointer->TilesPerRoomY * TileMapPointer->TileSideInMeters;
-
-        // Get a modulus within those boundaries:
-        real32 Modulus = GetRandomReal(&GameState->RandomSeed, ModulusMin, ModulusMax);
-
-        // Convert polar coordinates to X and Y coordinates
-        vector2 TreeVector = GetVector2FromPolarCoordinates(Argument, (TileMapPointer->TilesPerRoomY * TileMapPointer->TileSideInMeters));
+        real32 ModulusMin = TileMapPointer->TilesPerRoomY * TileSideInMeters * 2;
 
         // Find the middle tile of the world, or the origin in our coordinate system
-        u32 MiddleTileX = TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX / 2;
-        u32 MiddleTileY = TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY / 2;
+        u32 MiddleTileX = TilesInWorldX / 2;
+        u32 MiddleTileY = TilesInWorldY / 2;
+
         tile_map_position OriginTile = {MiddleTileX, MiddleTileY};
 
-        // Get the tree tile's coordinates in the tilemap by using TreeVector as an offset from the middle
-        //      tile, i.e., the origin of the coordinate system
-        u32 TreeTileX = MiddleTileX + RoundReal32ToS32(TreeVector.X);
-        Assert(TreeTileX < TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX);
-        u32 TreeTileY = MiddleTileY + RoundReal32ToS32(TreeVector.Y);
-        Assert(TreeTileY < TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY);
-        tile_map_position TreeTile = {TreeTileX, TreeTileY};
+        for(int NewGroveHotspotIdx = 0;
+            NewGroveHotspotIdx < 3;
+            ++NewGroveHotspotIdx)
+        {
 
-        SetTileValue(&GameState->WorldArena, TileMapPointer, TreeTile.AbsTileY, TreeTile.AbsTileX, TILE_TREE);
+            // Need to keep track of the hotspot locations we generate to avoid the ultra-rare but possible case
+            //      that we generate two of them on the same spot.
+            bool32 AlreadyGenerated = false;
+            tile_map_position TileMapPositionForThisGroveHotspot;
+            do
+            {
+                // First generate a random angle in the range of 0 to 2 pi, which we call the argument
+                //      since we are using the parlance of polar coordinates.
+                real32 Argument = GetRandomReal(&GameState->RandomSeed, 0, (PI * 2.0f));
 
+                // Get a modulus within those boundaries:
+                real32 Modulus = GetRandomReal(&GameState->RandomSeed, ModulusMin, ModulusMax);
 
-        
+                // Convert polar coordinates to X and Y coordinates
+                vector2 HotspotRawCoordinates = GetVector2FromPolarCoordinates(Argument, Modulus);
 
+                // Now use HotspotRawCoordinates to determine the AbsTileX and AbsTileY values of the hotspot.
+                //      HotspotRawCoordinates were generated relative to an origin of (0, 0), but we can
+                //      round them and add them to our our MiddleTileX and MiddleTileY coords we computed above this 
+                //      for loop to determine which AbsTiles they correspond to in our tilemap. 
+                TileMapPositionForThisGroveHotspot.AbsTileX = MiddleTileX + RoundReal32ToS32(HotspotRawCoordinates.X);
+                TileMapPositionForThisGroveHotspot.AbsTileY = MiddleTileY + RoundReal32ToS32(HotspotRawCoordinates.Y);
+                Assert(TileMapPositionForThisGroveHotspot.AbsTileX < TileMapPointer->RoomsInMapX * TileMapPointer->TilesPerRoomX);
+                Assert(TileMapPositionForThisGroveHotspot.AbsTileY < TileMapPointer->RoomsInMapY * TileMapPointer->TilesPerRoomY);
 
+                // Now check that this Grove Hotspot does not match one already generated.
+                for(int AlreadyGeneratedIdx = 0;
+                    AlreadyGeneratedIdx < (NewGroveHotspotIdx + 1);
+                    ++AlreadyGeneratedIdx)
+                {
+                    tile_map_position GroveHotspotToCheck = GameState->GroveHotspots[AlreadyGeneratedIdx];
+                    if(TileMapPositionForThisGroveHotspot.AbsTileX == GroveHotspotToCheck.AbsTileX && 
+                       TileMapPositionForThisGroveHotspot.AbsTileY == GroveHotspotToCheck.AbsTileY)
+                    {
+                        AlreadyGenerated = true;
+                        break;
+                    }
+                }
+            } while(AlreadyGenerated == true);
 
+            tile_map_position *WhereToStoreThisNewGroveHotspot = &GameState->GroveHotspots[NewGroveHotspotIdx];
+            WhereToStoreThisNewGroveHotspot->AbsTileX = TileMapPositionForThisGroveHotspot.AbsTileX;
+            WhereToStoreThisNewGroveHotspot->AbsTileY = TileMapPositionForThisGroveHotspot.AbsTileY;
+        }
 
+        // Iterate through every possible tile in the world and compute its distance from one of the hotspots.
+        // A tile that is a hotspot has a 100% chance of being a tree. 
+        // A tile that is 200 meters or more from a hotspot has a zero percent chance of being a tree.
 
+        vector2 GroveHotspotVectors[3];
+        for(int GroveHotspotIdx = 0;
+            GroveHotspotIdx < 3;
+            ++GroveHotspotIdx)
+        {
+            tile_map_position ThisGroveHotspot = GameState->GroveHotspots[GroveHotspotIdx];
+            GroveHotspotVectors[GroveHotspotIdx].X = ThisGroveHotspot.AbsTileX * 
+                                                        TileSideInMeters + 
+                                                        TileSideInMeters * 0.5f;
+            GroveHotspotVectors[GroveHotspotIdx].Y = ThisGroveHotspot.AbsTileY * 
+                                                        TileSideInMeters + 
+                                                        TileSideInMeters * 0.5f;
+        }
 
+        for(u32 AbsTileY = 0;
+            AbsTileY < TilesInWorldY;
+            ++AbsTileY)
+        {
+            for(u32 AbsTileX = 0;
+                AbsTileX < TilesInWorldX;
+                ++AbsTileX)
+            {
+                // Set each tile to water
+                SetTileValue(&GameState->WorldArena, TileMapPointer, AbsTileY, AbsTileX, TILE_WATER);
 
+                // Now determine whether the tile gets a tree based on its proximity to each hotspot.
+                vector2 ThisTileVector = {(AbsTileX * TileSideInMeters + TileSideInMeters * 0.5f),
+                                          (AbsTileY * TileSideInMeters + TileSideInMeters * 0.5f)};
 
+                real32 ProbOfNoTreeBasedOnHotspot[3];
+                for(int HotspotIdx = 0;
+                    HotspotIdx < 3;
+                    ++HotspotIdx)
+                {
+                    vector2 DiffVector = GroveHotspotVectors[HotspotIdx] - ThisTileVector;
+                    real32 SquaredDiff = SquaredMagnitude(DiffVector);
 
-#if 0
-        // Path off of east room
-        MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 10, 11);
+                    // Actually not clamped yet
+                    real32 Clamped = SquaredDiff / Square(50.0f);
 
-        // Path off of north room
-        MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 11, 10);
+                    // Clamp it
+                    if(Clamped > 1) { Clamped = 1; }
+                    if(Clamped < 0) { Clamped = 0; }
 
-        // Path off of west room
-        MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 10, 9);
-        
-        // Path off of south room
-        MakePathOfNRooms(&GameState->WorldArena, &GameState->RandomSeed, TileMapPointer, RoomsPerPath, 9, 10);
-#endif
+                    ProbOfNoTreeBasedOnHotspot[HotspotIdx] = Clamped;
+                }
+
+                real32 TotalProbOfNoTree = 1;
+                for(int ProbBasedOnHotspotIdx = 0;
+                    ProbBasedOnHotspotIdx < 3;
+                    ++ProbBasedOnHotspotIdx)
+                {
+                    TotalProbOfNoTree *= ProbOfNoTreeBasedOnHotspot[ProbBasedOnHotspotIdx];
+                }
+
+                // STOP: can't check if this worked because we are not rendering trees properly in birdseye.
+                //      need to remove tile_hotspot if statement in birdseye rendering loop (should if on TILE_TREE),
+                //      and blit if so. 
+                //
+                // but actually think we should still record where the hotspots are, so we can see
+                //      if there is clustering around them as we expect.
+                real32 ProbOfTree = 1.0f - TotalProbOfNoTree;
+                real32 DiceRoll = GetRandomReal(&GameState->RandomSeed, 0, 1);
+                if(DiceRoll <= ProbOfTree)
+                {
+                    SetTileValue(&GameState->WorldArena, TileMapPointer, AbsTileY, AbsTileX, TILE_TREE);
+                }
+            }
+        }
+
         GameState->PlayerPosition.AbsTileY = GetAbsTileFromRoomCoords(CenterRoomYCoord, 4, TileMapPointer->TilesPerRoomY);
         GameState->PlayerPosition.AbsTileX = GetAbsTileFromRoomCoords(CenterRoomXCoord, 4, TileMapPointer->TilesPerRoomX);
         GameState->PlayerPosition.TileOffset.Y = 0.6f;
@@ -613,7 +767,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             tile_map_position TestPlayerRight = TestPlayerBase;
             TestPlayerRight.TileOffset.X += (PLAYER_WIDTH * 0.5f);
             TestPlayerRight = GetCanonicalPosition(TileMapPointer, TestPlayerRight);
-
+#if 0
             bool32 Collided = false;
             tile_map_position CollisionPoint;
             if(!IsTileAccessible(&GameState->WorldArena, TileMapPointer, 
@@ -661,8 +815,11 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             {
                 GameState->PlayerPosition = TestPlayerBase;
             }
+#else
+            GameState->PlayerPosition = TestPlayerBase;
         }
     }
+#endif
 
     // Draw underlayer
     vector2 ScreenMin = {0, 0};
@@ -742,16 +899,6 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                                                                    RelTileY,
                                                                                                    TileMapPointer->TileSideInPixels);
 
-
-#if 0
-                    vector2 TileMin;
-                    TileMin.X = Origin.X - (TileMapPointer->TileSideInPixels * 0.5f) + (TileMapPointer->TileSideInPixels * RelTileX);
-                    TileMin.Y = Origin.Y - (TileMapPointer->TileSideInPixels * 0.5f) - (TileMapPointer->TileSideInPixels * RelTileY);
-                    vector2 TileMax;
-                    TileMax.X = TileMin.X + (TileMapPointer->TileSideInPixels);
-                    TileMax.Y = TileMin.Y + (TileMapPointer->TileSideInPixels);
-#endif
-
                     // To scroll the screen, we then OFFSET that tile position by how far the player has moved relative to the
                     //      center of the tile they're currently on. e.g., if the player's tile offset is X = 0.3, Y = -0.6,
                     //      (relative to the center of the tile), their location is 0.3 meters to the right of the tile's center,
@@ -774,17 +921,17 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     TileScreenCoords.Max.Y += (PlayerPosition->TileOffset.Y * MetersToPixels);
                     if( (PlayerPosition->AbsTileY == TileToDrawY) && (PlayerPosition->AbsTileX == TileToDrawX) )
                     {
-                        real32 TileR = 0.25f;
-                        real32 TileG = 0.25f;
-                        real32 TileB = 0.25f;
-                        DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, TileR, TileG, TileB);
+                        real32 PlayerTileR = 0.25f;
+                        real32 PlayerTileG = 0.25f;
+                        real32 PlayerTileB = 0.25f;
+                        DrawRectangle(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, PlayerTileR, PlayerTileG, PlayerTileB);
                     }
                     else
                     {
                         BlitBitmap(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->WaterSmall);
                         if(TileValue == TILE_TREE)
                         {
-                            BlitBitmapAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->TreeSmall);
+                            BlitBitmapWithNearestNeighborAndBlend(Buffer, TileScreenCoords.Min, TileScreenCoords.Max, &GameState->Tree);
                         }
                     }
                 }
@@ -928,6 +1075,8 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DrawRectangle(Buffer, LineMin, LineMax, 1.0f, 0, 1.0f);
 
     }
+
+    DEBUGDrawText(Buffer, 15, 15, "Frames per second: 33.2", DebugState->DebugText, 1.0f, 0.2f, 0.2f); 
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

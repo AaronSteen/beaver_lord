@@ -4,3 +4,4 @@ build/
 *.bmp
 data/Sprout Lands - Sprites - Basic pack/
 *.aseprite
+.cache
