@@ -12,6 +12,7 @@ extern "C" {
 #endif
     
 #include <stdint.h>
+#include <stdio.h>
 #include <math.h>
 #include <time.h>
 
@@ -134,6 +135,8 @@ typedef struct game_input
     s32 MouseX, MouseY, MouseZ;
 
     real32 dtForFrame;
+
+    real32 MSForLastFrame;
 
     game_controller_input Controllers[5];
 } game_input;

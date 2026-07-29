@@ -63,8 +63,10 @@ tile_value
 GetTileValue(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTileY, u32 AbsTileX)
 {
     tile_value ToReturn = TILE_INVALID;
-    Assert(AbsTileY < TILES_IN_WORLD_Y);
-    Assert(AbsTileX < TILES_IN_WORLD_X);
+    if((AbsTileY >= TILES_IN_WORLD_Y) || (AbsTileX >= TILES_IN_WORLD_X))
+    {
+        return(ToReturn);
+    }
 
     tile_chunk_position ChunkPosition = GetChunkPositionFromAbsTiles(TileMapPointer, AbsTileY, AbsTileX);
     Assert(ChunkPosition.ChunkY < TileMapPointer->ChunksInMapY);
@@ -101,7 +103,7 @@ IsTileAccessible(memory_arena *ArenaPointer, tile_map *TileMapPointer, u32 AbsTi
     //                   = ( (TILE_WATER != TILE_INVALID) && (TILE_WATER != TILE_TREE) )
     //                   = ( 1 && 1)
     //                   = 1, true
-    bool IsAccessible = ( (TileValue != TILE_INVALID) && (TileValue != TILE_TREE) );
+    bool IsAccessible = (TileValue != TILE_INVALID);
     return(IsAccessible);
 }
 

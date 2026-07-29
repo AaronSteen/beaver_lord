@@ -160,10 +160,10 @@ struct game_state
     bool32 BirdsEye;
     u32 RandomSeed;
 
-    bitmap Tree;
-    bitmap TreeSmall;
-    bitmap Water;
-    bitmap WaterSmall;
+    bitmap Willow64;
+    bitmap Willow16;
+    bitmap Water64;
+    bitmap Water16;
 
     bitmap BeaverRight;
     bitmap BeaverUp;

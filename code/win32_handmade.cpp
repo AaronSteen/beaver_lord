@@ -1044,6 +1044,7 @@ WinMain(HINSTANCE Instance,
     
                 LARGE_INTEGER LastCounter = Win32GetWallClock();
                 LARGE_INTEGER FlipWallClock = Win32GetWallClock();
+                real64 MSPerFrame = 0;
 
                 win32_game_code Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
                                                          TempGameCodeDLLFullPath);
@@ -1053,6 +1054,7 @@ WinMain(HINSTANCE Instance,
                 while(GlobalRunning)
                 {
                     NewInput->dtForFrame = TargetSecondsPerFrame;
+                    NewInput->MSForLastFrame = MSPerFrame;
                     
                     FILETIME NewDLLWriteTime = Win32GetLastWriteTime(SourceGameCodeDLLFullPath);
                     if(CompareFileTime(&NewDLLWriteTime, &Game.DLLLastWriteTime) != 0)
@@ -1299,7 +1301,7 @@ WinMain(HINSTANCE Instance,
                         }
                 
                         LARGE_INTEGER EndCounter = Win32GetWallClock();
-                        real32 MSPerFrame = 1000.0f*Win32GetSecondsElapsed(LastCounter, EndCounter);                    
+                        MSPerFrame = 1000.0f*Win32GetSecondsElapsed(LastCounter, EndCounter);                    
                         LastCounter = EndCounter;
                 
                         win32_window_dimension Dimension = Win32GetWindowDimension(Window);
@@ -1314,13 +1316,12 @@ WinMain(HINSTANCE Instance,
                         NewInput = OldInput;
                         OldInput = Temp;
                         // TODO(casey): Should I clear these here?
-
 #if 0
                         u64 EndCycleCount = __rdtsc();
                         u64 CyclesElapsed = EndCycleCount - LastCycleCount;
                         LastCycleCount = EndCycleCount;
 
-                        real64 FPS = 0.0f;
+                        real64 FPS = 0;
                         real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
 
                         char FPSBuffer[256];
